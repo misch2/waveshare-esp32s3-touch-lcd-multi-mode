@@ -1,0 +1,6 @@
+[submodule "MeteoPlaneRadar"]
+	path = MeteoPlaneRadar
+	url = https://github.com/petus/MeteoPlaneRadar
+[submodule "waveshare-hodiny"]
+	path = waveshare-hodiny
+	url = https://github.com/CooLajz/waveshare-hodiny
