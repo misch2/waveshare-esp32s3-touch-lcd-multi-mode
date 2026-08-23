@@ -84,3 +84,5 @@ bool displayHostBegin(TouchSampleCallback touchCallback) {
 }
 
 void displayHostLoop() { lv_timer_handler(); }
+
+void displayHostResync() { LCD_Resync(); }

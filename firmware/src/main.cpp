@@ -5,10 +5,12 @@
 
 #include "AppConfig.h"
 #include "AppConfigStore.h"
+#include "ClockConfig.h"
 #include "ClockScreen.h"
 #include "DisplayHost.h"
 #include "GestureRecognizer.h"
 #include "I2C_Driver.h"
+#include "NetworkHost.h"
 #include "RadarScreen.h"
 #include "ScreenManager.h"
 #include "TCA9554PWR.h"
@@ -17,9 +19,13 @@
 
 namespace {
 app_core::AppConfig appConfig = app_core::AppConfig::defaults();
+ClockConfig clockConfig;
 GestureRecognizer gestureRecognizer;
 ScreenManager screenManager(appConfig);
-ClockScreen clockScreen;
+
+void previewClockBrightness(uint8_t brightness) { Set_Backlight(brightness); }
+
+ClockScreen clockScreen(clockConfig, previewClockBrightness);
 RadarScreen radarScreen;
 GestureEvent pendingGesture;
 bool gesturePending = false;
@@ -44,11 +50,24 @@ void setup() {
   delay(300);
   Serial.println("Multi-mode screen prototype starting");
 
+  // ClockConfig owns its own partition and performs schema migrations. It
+  // must be ready before display construction so the dashboard never starts
+  // with a transient, different configuration.
+  const bool clockStorageReady = clockConfigBegin();
+  if (!clockStorageReady || !clockConfigLoad(clockConfig)) {
+    clockConfigApplyDefaults(clockConfig);
+    if (!clockStorageReady) {
+      Serial.println("Warning: clock configuration partition unavailable; using defaults");
+    } else {
+      Serial.println("Warning: clock configuration invalid; using defaults");
+    }
+  }
+
   I2C_Init();
   Set_EXIOS(0x0C);
   TCA9554PWR_Init(0x70);
   LCD_Init();
-  Set_Backlight(35);
+  Set_Backlight(clockConfig.dayBrightness);
 
   if (!displayHostBegin(onTouchSample)) halt("display host init failed");
   if (!appConfigLoad(appConfig)) {
@@ -61,6 +80,9 @@ void setup() {
     halt("screen registration failed");
   }
   if (!screenManager.begin()) halt("screen init failed");
+  if (!network_host::begin()) {
+    Serial.println("Warning: network host initialization failed");
+  }
 
   Serial.printf("Ready: %u screens, active=%s, PSRAM free=%u\n",
                 static_cast<unsigned>(screenManager.moduleCount()),
@@ -69,7 +91,22 @@ void setup() {
 }
 
 void loop() {
+  network_host::loop();
   displayHostLoop();
+
+  clockScreen.updateNetworkStatus(network_host::connected(),
+                                  network_host::ipAddress());
+  std::tm localTime;
+  if (network_host::localTime(localTime)) {
+    clockScreen.updateLocalTime(localTime);
+  }
+
+  if (clockScreen.takeConfigSaveRequest()) {
+    if (!clockConfigSave(clockConfig)) {
+      Serial.println("Warning: clock configuration could not be persisted");
+    }
+    displayHostResync();
+  }
 
   if (gesturePending) {
     const GestureEvent event = pendingGesture;

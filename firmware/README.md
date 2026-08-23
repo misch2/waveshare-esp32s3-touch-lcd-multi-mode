@@ -15,26 +15,29 @@ Current gesture contract:
 Implemented screens:
 
 - `clock.dashboard` wraps the actual pinned `waveshare-hodiny` LVGL dashboard,
-  fonts and static weather assets. It currently uses deterministic demo values
-  and an uptime-based clock because Wi-Fi, SNTP and Home Assistant are not part
-  of this hardware spike yet.
+  fonts and static weather assets. It loads the original versioned
+  `ClockConfig` (including migrations), reuses the upstream
+  `clock-wifi`/Improv provisioning path and displays real SNTP time. Sensor and
+  weather values remain deterministic until the upstream data worker is
+  extracted behind a queue.
 - `meteo.radar` is a lightweight LVGL radar demonstrator. It proves vertical
   range gestures and host navigation, but does not yet download or render the
   MeteoPlaneRadar data.
 
 The host configuration is stored as versioned JSON in NVS. It uses stable
 screen IDs, enabled flags and configured order, and always keeps at least one
-screen reachable. The combined partition table retains standard OTA offsets
-and reserves the upstream clock configuration partition for the next phase.
+screen reachable. Clock settings retain the original binary schema, checksum,
+migrations and dedicated `clockcfg` partition. The combined partition table
+retains standard OTA offsets.
 
 Build from this directory with `pio run`. The first build may need to download
 LVGL 8.3.10. This is deliberately a hardware prototype, not yet a replacement
 for either upstream firmware.
 
 Validated output is written to
-`.pio/build/waveshare-prototype/firmware.factory.bin`. The prototype has only
-been compiled and host-tested; it has not yet been flashed to a physical
-display.
+`.pio/build/waveshare-prototype/firmware.factory.bin`. The original display and
+gesture prototype was hardware-tested; network, persisted clock settings and
+SNTP changes still require a new physical smoke test.
 
 The integrated upstream code remains covered by the MIT licenses in the two
 submodules. Preserve both license files when distributing combined binaries.

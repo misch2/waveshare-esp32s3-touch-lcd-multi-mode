@@ -7,4 +7,4 @@ using TouchSampleCallback = void (*)(bool pressed, int16_t x, int16_t y,
 
 bool displayHostBegin(TouchSampleCallback touchCallback);
 void displayHostLoop();
-
+void displayHostResync();

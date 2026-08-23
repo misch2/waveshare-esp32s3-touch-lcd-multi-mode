@@ -342,6 +342,130 @@ void testScreenManagerUsesConfiguredOrder() {
   CHECK(manager.active() == &clock);
 }
 
+void testScreenManagerSkipsDisabledAndUnregisteredEntries() {
+  AppConfig config = AppConfig::defaults();
+  config.screenCount = 6;
+  std::strcpy(config.screens[0].id, "module.unregistered.before");
+  config.screens[0].enabled = 1;
+  std::strcpy(config.screens[1].id, "meteo.radar");
+  config.screens[1].enabled = 0;
+  std::strcpy(config.screens[2].id, "module.unregistered.middle");
+  config.screens[2].enabled = 1;
+  std::strcpy(config.screens[3].id, "clock.dashboard");
+  config.screens[3].enabled = 1;
+  std::strcpy(config.screens[4].id, "module.unregistered.after");
+  config.screens[4].enabled = 1;
+  std::strcpy(config.screens[5].id, "meteo.extra");
+  config.screens[5].enabled = 1;
+  CHECK(config.validate());
+
+  RecordingModule clock("clock.dashboard");
+  RecordingModule radar("meteo.radar");
+  RecordingModule extra("meteo.extra");
+  ScreenManager manager(config);
+  CHECK(manager.add(clock));
+  CHECK(manager.add(radar));
+  CHECK(manager.add(extra));
+  CHECK(manager.begin());
+  CHECK(manager.active() == &clock);
+
+  GestureEvent left{};
+  left.kind = GestureKind::HorizontalSwipe;
+  left.direction = -1;
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &extra);
+  CHECK_EQ(clock.hideCount, 1);
+  CHECK_EQ(extra.showCount, 1);
+
+  GestureEvent right{};
+  right.kind = GestureKind::HorizontalSwipe;
+  right.direction = 1;
+  CHECK(manager.dispatch(right));
+  CHECK(manager.active() == &clock);
+  CHECK_EQ(extra.hideCount, 1);
+  CHECK_EQ(clock.showCount, 2);
+}
+
+void testScreenManagerDoesNotSelfSwitchWithOneEnabledScreen() {
+  AppConfig config = AppConfig::defaults();
+  CHECK(config.setEnabled("meteo.radar", false));
+
+  RecordingModule clock("clock.dashboard");
+  RecordingModule radar("meteo.radar");
+  ScreenManager manager(config);
+  CHECK(manager.add(clock));
+  CHECK(manager.add(radar));
+  CHECK(manager.begin());
+  CHECK(manager.active() == &clock);
+
+  const int showCount = clock.showCount;
+  const int hideCount = clock.hideCount;
+  GestureEvent left{};
+  left.kind = GestureKind::HorizontalSwipe;
+  left.direction = -1;
+  CHECK(!manager.dispatch(left));
+  CHECK(!manager.step(1));
+  CHECK(!manager.showById("meteo.radar"));
+  CHECK(manager.active() == &clock);
+  CHECK_EQ(clock.showCount, showCount);
+  CHECK_EQ(clock.hideCount, hideCount);
+  CHECK_EQ(radar.showCount, 0);
+  CHECK_EQ(radar.hideCount, 0);
+}
+
+void testScreenManagerKeepsLocalGesturesLocal() {
+  AppConfig config = AppConfig::defaults();
+  RecordingModule clock("clock.dashboard");
+  RecordingModule radar("meteo.radar");
+  ScreenManager manager(config);
+  CHECK(manager.add(clock));
+  CHECK(manager.add(radar));
+  CHECK(manager.begin());
+  CHECK(manager.showById("meteo.radar"));
+
+  const int radarShowCount = radar.showCount;
+  const int radarHideCount = radar.hideCount;
+  const int clockShowCount = clock.showCount;
+  const int clockHideCount = clock.hideCount;
+  GestureEvent tap{};
+  tap.kind = GestureKind::Tap;
+  GestureEvent longPress{};
+  longPress.kind = GestureKind::LongPress;
+  GestureEvent vertical{};
+  vertical.kind = GestureKind::VerticalSwipe;
+  vertical.direction = -1;
+
+  CHECK(manager.dispatch(tap));
+  CHECK(manager.dispatch(longPress));
+  CHECK(manager.dispatch(vertical));
+  CHECK(manager.active() == &radar);
+  CHECK_EQ(radar.gestureCount, 3);
+  CHECK(radar.lastGesture.kind == GestureKind::VerticalSwipe);
+  CHECK_EQ(radar.showCount, radarShowCount);
+  CHECK_EQ(radar.hideCount, radarHideCount);
+  CHECK_EQ(clock.showCount, clockShowCount);
+  CHECK_EQ(clock.hideCount, clockHideCount);
+}
+
+void testScreenManagerAutoRotationAcrossMillisWrap() {
+  AppConfig config = AppConfig::defaults();
+  config.autoRotateSeconds = 1;
+  RecordingModule clock("clock.dashboard");
+  RecordingModule radar("meteo.radar");
+  ScreenManager manager(config);
+  CHECK(manager.add(clock));
+  CHECK(manager.add(radar));
+  CHECK(manager.begin());
+  CHECK(manager.active() == &clock);
+
+  // The unsigned subtraction in the scheduler must continue to work when
+  // millis() wraps from UINT32_MAX to zero.
+  manager.tick(UINT32_MAX - 255U);
+  CHECK(manager.active() == &clock);
+  manager.tick(800U);  // elapsed time is 1,056 ms across the wrap
+  CHECK(manager.active() == &radar);
+}
+
 }  // namespace
 
 int main() {
@@ -354,6 +478,10 @@ int main() {
   testScreenManagerNavigationAndDispatch();
   testScreenManagerAutoRotation();
   testScreenManagerUsesConfiguredOrder();
+  testScreenManagerSkipsDisabledAndUnregisteredEntries();
+  testScreenManagerDoesNotSelfSwitchWithOneEnabledScreen();
+  testScreenManagerKeepsLocalGesturesLocal();
+  testScreenManagerAutoRotationAcrossMillisWrap();
 
   if (failures != 0) {
     std::fprintf(stderr, "%d test assertion(s) failed\n", failures);

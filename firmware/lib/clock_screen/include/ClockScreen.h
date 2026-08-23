@@ -1,10 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <ctime>
 
 #include <lvgl.h>
 
 #include "ScreenModule.h"
+
+struct ClockConfig;
+using ClockBrightnessPreviewCallback = void (*)(uint8_t brightness);
 
 /**
  * Adapter around the pinned waveshare-hodiny dashboard.
@@ -15,6 +19,9 @@
  */
 class ClockScreen final : public ScreenModule {
  public:
+  explicit ClockScreen(ClockConfig& config,
+                       ClockBrightnessPreviewCallback brightnessPreview);
+
   const char* id() const override { return "clock.dashboard"; }
   const char* label() const override { return "Clock"; }
 
@@ -24,13 +31,34 @@ class ClockScreen final : public ScreenModule {
   void tick(uint32_t nowMs) override;
   bool handleGesture(const GestureEvent& event) override;
 
- private:
-  void updateDemoClock(uint32_t nowMs);
+  void updateNetworkStatus(bool connected, const char* ipAddress);
+  void updateLocalTime(const std::tm& localTime);
+  bool takeConfigSaveRequest();
 
+ private:
+  void saveSettings(uint8_t dayBrightness, uint8_t nightBrightness,
+                    bool automaticDayNight, bool secondRingEnabled,
+                    uint8_t secondEffect, bool animatedWeatherIcons,
+                    uint8_t weatherIconStyle, bool automaticFirmwareUpdate,
+                    uint8_t webMode);
+  void previewBrightness(uint8_t brightness);
+
+  static void onBrightnessPreview(uint8_t brightness);
+  static void onSettingsSave(uint8_t dayBrightness, uint8_t nightBrightness,
+                             bool automaticDayNight, bool secondRingEnabled,
+                             uint8_t secondEffect,
+                             bool animatedWeatherIcons,
+                             uint8_t weatherIconStyle,
+                             bool automaticFirmwareUpdate, uint8_t webMode);
+
+  ClockConfig& config_;
+  ClockBrightnessPreviewCallback brightnessPreview_ = nullptr;
   lv_obj_t* screen_ = nullptr;
+  lv_obj_t* returnScreen_ = nullptr;
   bool initialized_ = false;
   bool visible_ = false;
-  bool clockStarted_ = false;
-  uint32_t startMs_ = 0;
-  uint32_t lastSecond_ = UINT32_MAX;
+  bool lastWifiConnected_ = false;
+  char lastWifiAddress_[16] = {};
+  int64_t lastPresentedSecond_ = -1;
+  bool configSavePending_ = false;
 };

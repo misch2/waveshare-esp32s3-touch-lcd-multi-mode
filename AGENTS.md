@@ -42,14 +42,18 @@ physical display. The following are verified:
 - horizontal screen switching, vertical radar range gestures and automatic
   rotation work and remain stable.
 
-This is still a prototype:
+The original display/gesture baseline was hardware-tested. The following newer
+clock integration slice is compiled but still needs a fresh physical smoke
+test:
 
-- `clock.dashboard` uses deterministic demo sensor/weather values and an
-  uptime-based clock;
+- `clock.dashboard` loads the original `ClockConfig` schema and migrations;
+- the host reuses the upstream `clock-wifi` NVS and Improv Serial provisioning;
+- the host owns SNTP and publishes real Czech local time to the clock dashboard;
+- clock sensor/weather values are still deterministic demo values;
 - `meteo.radar` is a visual/gesture demonstrator and does not use real
   MeteoPlaneRadar network data;
-- the common web configuration, Wi-Fi, SNTP, Home Assistant and production OTA
-  flows are not connected yet.
+- the common web configuration, Home Assistant/Open-Meteo data worker and
+  production OTA flows are not connected yet.
 
 Do not extend the demo values or demo radar into parallel production
 implementations. Replace them by adapting the proven upstream functionality.
@@ -168,9 +172,10 @@ Reuse rather than recreate:
 - relevant diagnostics and firmware-update behavior after they are moved under
   the single host server.
 
-The current `FirmwareUpdateServiceStub.cpp` and `ClockConfigCopyStub.cpp` are
-prototype link shims, not intended production replacements. Remove each stub
-when the real owning upstream service is adapted.
+`ClockConfigCopyStub.cpp` has been removed; `ClockConfigUpstream.cpp` compiles
+the real upstream schema, checksum, persistence and migrations. The remaining
+`FirmwareUpdateServiceStub.cpp` is a prototype link shim, not an intended
+production replacement. Remove it when host-owned OTA is adapted.
 
 ### Meteo module
 
@@ -340,8 +345,9 @@ these tests whenever the host contracts change.
 
 ## Near-term implementation order
 
-1. Replace clock demo data with adapters around the existing `ClockConfig`,
-   Wi-Fi/SNTP, Home Assistant and Open-Meteo services.
+1. Extract the existing Home Assistant and Open-Meteo worker behind a
+   `ClockValues` queue and replace the remaining clock sensor/weather demo
+   values. `ClockConfig`, host Wi-Fi and SNTP are already wired in code.
 2. Replace the radar demonstrator with the real Meteo data/cache/rendering
    adapter while retaining vertical range gestures.
 3. Add the remaining Meteo screens as separate stable-ID modules.
