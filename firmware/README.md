@@ -41,13 +41,23 @@ Validated output is written to
 `.pio/build/waveshare-prototype/firmware.factory.bin`. The original display and
 gesture prototype, persisted clock settings, Wi-Fi and SNTP were hardware-
 tested. Real Home Assistant values and the on-device settings overlay were also
-verified. The newly connected HTTP configuration server still needs a physical
-smoke test.
+verified. The HTTP configuration server, persistence and resulting display
+updates were verified on the physical device as well.
 
 The current web compatibility bridge intentionally retains the clock project's
 original `/` and `/api/*` routes. Before adding the Meteo web UI it must be
 refactored to accept host-owned `/clock/` and clock API prefixes; do not mount
 the colliding Meteo routes unchanged.
+
+The integration display host selects an 8 MHz RGB pixel clock and waits for
+VSYNC before LVGL may reuse a flushed framebuffer. This is intended to prevent
+short repeated/shifted horizontal row blocks under full-refresh load. This base
+timing change has passed a hardware smoke test. Configuration saves additionally
+request one deferred panel recovery: a normal full-frame flush is completed
+first, the restart is bounded by fresh VSYNC generations, and a normal redraw
+follows it. This Save-specific change was not compiled by Codex and still needs
+a hardware stress test; watch the serial log for `LCD VSYNC timeout during ...`
+warnings.
 
 The integrated upstream code remains covered by the MIT licenses in the two
 submodules. Preserve both license files when distributing combined binaries.

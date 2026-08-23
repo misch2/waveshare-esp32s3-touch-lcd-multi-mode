@@ -53,8 +53,8 @@ physical display. The following are verified:
 - the original on-device settings overlay opens, saves and affects the clock as
   expected on the physical device;
 - the original clock web UI is now compiled as the sole server on port 80 and
-  advertised over mDNS. This newest web slice still needs a physical smoke
-  test;
+  advertised over mDNS. HTTP access, configuration loading/saving and the
+  resulting display changes have been verified on the physical device;
 - `meteo.radar` is a visual/gesture demonstrator and does not use real
   MeteoPlaneRadar network data;
 - the common landing page, Meteo web module and production OTA flows are not
@@ -298,8 +298,28 @@ The two upstream applications target the same board and share pins/resources:
 
 They previously used different pixel clocks and different flush semantics. The
 combined host must choose and test one panel timing; modules must never adjust
-panel timing independently. Current builds use the hardware wrapper selected by
-the prototype, but any timing change requires a physical display smoke test.
+panel timing independently. `DisplayHost` now lowers the clock driver's 14 MHz
+pixel clock at runtime to the 8 MHz timing proven by MeteoPlaneRadar.
+`DisplayHost` also waits for the RGB-panel VSYNC callback before returning a
+full-frame LVGL flush, so LVGL cannot reuse a framebuffer that is still being
+scanned out. These changes target transient repeated/shifted horizontal row
+blocks observed during full-screen refreshes, especially the 50 ms radar sweep.
+They have intentionally not been compiled by Codex at the user's request. The
+8 MHz/VSYNC combination has passed a physical display smoke test and eliminated
+the transient artifacts during normal redraws.
+
+Configuration saves must call `displayHostRequestResync()`, never restart the
+panel directly. The host first forces and completes a normal full-frame flush,
+then performs one restart between generation-checked VSYNC boundaries and
+invalidates the screen once more. Requests are coalesced and all VSYNC waits are
+bounded to 100 ms. Do not restore the upstream immediate restart or its second
+delayed restart after Save; both can race RGB DMA and leave the image vertically
+shifted. This Save-specific recovery still needs a physical stress test.
+
+Do not remove the VSYNC gate or restore 14 MHz without reproducing the stress
+case. A serial `LCD VSYNC timeout during ...` warning means the panel callback
+did not arrive within 100 ms and must be investigated rather than silently
+bypassed.
 
 The PlatformIO target overrides the generic board profile for 16 MB flash and
 OPI PSRAM. Do not infer the physical board capacity solely from the generic
