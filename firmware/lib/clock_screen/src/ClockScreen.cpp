@@ -17,18 +17,6 @@ const char* kCzechMonths[] = {
     "ČERVENCE", "SRPNA", "ZÁŘÍ", "ŘÍJNA", "LISTOPADU", "PROSINCE",
 };
 
-ClockValues demoValues() {
-  ClockValues values;
-  values.weatherCode = 800;
-  values.weatherIsDay = true;
-  values.leftTemperatureC = 21.4f;
-  values.rightTemperatureC = 22.1f;
-  values.metricAValue = 620.0f;
-  values.metricBValue = 45.0f;
-  values.homeAssistantOnline = false;
-  return values;
-}
-
 }  // namespace
 
 ClockScreen::ClockScreen(ClockConfig& config,
@@ -48,7 +36,7 @@ bool ClockScreen::begin() {
   if (screen_ == nullptr) return false;
   lv_scr_load(screen_);
 
-  ClockValues values = demoValues();
+  ClockValues values;
   clockDashboardInit(values, config_.dayBrightness, config_.nightBrightness,
                      config_.automaticDayNight,
                      &ClockScreen::onBrightnessPreview, nullptr,
@@ -204,4 +192,9 @@ void ClockScreen::updateLocalTime(const std::tm& localTime) {
       break;
   }
   clockDashboardSetDate(dateText);
+}
+
+void ClockScreen::updateValues(const ClockValues& values) {
+  if (!initialized_) return;
+  clockDashboardUpdate(values);
 }

@@ -7,10 +7,13 @@ Arduino, LVGL, Wi-Fi, or a connected display.
 From the repository root, build and run it with:
 
 ```text
-g++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/lib/app_core/include ^
+g++ -std=c++17 -Wall -Wextra -Werror ^
+  -Ifirmware/lib/app_core/include ^
+  -Iwaveshare-hodiny/WaveshareHodiny ^
   firmware/lib/app_core/src/AppConfig.cpp ^
   firmware/lib/app_core/src/GestureRecognizer.cpp ^
   firmware/lib/app_core/src/ScreenManager.cpp ^
+  waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp ^
   firmware/test/native/test_runner.cpp ^
   -o firmware/test/native/build/app_core_tests.exe
 firmware\test\native\build\app_core_tests.exe

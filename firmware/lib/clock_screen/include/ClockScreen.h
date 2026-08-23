@@ -8,6 +8,7 @@
 #include "ScreenModule.h"
 
 struct ClockConfig;
+struct ClockValues;
 using ClockBrightnessPreviewCallback = void (*)(uint8_t brightness);
 
 /**
@@ -33,6 +34,7 @@ class ClockScreen final : public ScreenModule {
 
   void updateNetworkStatus(bool connected, const char* ipAddress);
   void updateLocalTime(const std::tm& localTime);
+  void updateValues(const ClockValues& values);
   bool takeConfigSaveRequest();
 
  private:

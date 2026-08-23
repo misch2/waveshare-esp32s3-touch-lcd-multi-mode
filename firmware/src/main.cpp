@@ -6,6 +6,7 @@
 #include "AppConfig.h"
 #include "AppConfigStore.h"
 #include "ClockConfig.h"
+#include "ClockDataService.h"
 #include "ClockScreen.h"
 #include "DisplayHost.h"
 #include "GestureRecognizer.h"
@@ -20,6 +21,7 @@
 namespace {
 app_core::AppConfig appConfig = app_core::AppConfig::defaults();
 ClockConfig clockConfig;
+ClockDataService clockDataService;
 GestureRecognizer gestureRecognizer;
 ScreenManager screenManager(appConfig);
 
@@ -29,6 +31,7 @@ ClockScreen clockScreen(clockConfig, previewClockBrightness);
 RadarScreen radarScreen;
 GestureEvent pendingGesture;
 bool gesturePending = false;
+bool clockTimeWasSynchronized = false;
 
 void onTouchSample(bool pressed, int16_t x, int16_t y, uint32_t nowMs) {
   GestureEvent event;
@@ -83,6 +86,9 @@ void setup() {
   if (!network_host::begin()) {
     Serial.println("Warning: network host initialization failed");
   }
+  if (!clockDataService.begin(clockConfig)) {
+    Serial.println("Warning: clock data service initialization failed");
+  }
 
   Serial.printf("Ready: %u screens, active=%s, PSRAM free=%u\n",
                 static_cast<unsigned>(screenManager.moduleCount()),
@@ -100,11 +106,22 @@ void loop() {
   if (network_host::localTime(localTime)) {
     clockScreen.updateLocalTime(localTime);
   }
+  const bool timeSynchronized = network_host::timeSynchronized();
+  if (timeSynchronized && !clockTimeWasSynchronized) {
+    clockDataService.requestRefresh();
+  }
+  clockTimeWasSynchronized = timeSynchronized;
+
+  ClockValues clockValues;
+  if (clockDataService.consumeValues(clockValues)) {
+    clockScreen.updateValues(clockValues);
+  }
 
   if (clockScreen.takeConfigSaveRequest()) {
     if (!clockConfigSave(clockConfig)) {
       Serial.println("Warning: clock configuration could not be persisted");
     }
+    clockDataService.applyConfig(clockConfig);
     displayHostResync();
   }
 

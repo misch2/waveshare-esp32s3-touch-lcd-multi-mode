@@ -17,9 +17,10 @@ Implemented screens:
 - `clock.dashboard` wraps the actual pinned `waveshare-hodiny` LVGL dashboard,
   fonts and static weather assets. It loads the original versioned
   `ClockConfig` (including migrations), reuses the upstream
-  `clock-wifi`/Improv provisioning path and displays real SNTP time. Sensor and
-  weather values remain deterministic until the upstream data worker is
-  extracted behind a queue.
+  `clock-wifi`/Improv provisioning path and displays real SNTP time. Its
+  background `ClockDataService` preserves the original Home Assistant and
+  Open-Meteo clients, retry intervals, parsing and day/night behavior while the
+  main UI loop alone applies the latest `ClockValues` snapshot to LVGL.
 - `meteo.radar` is a lightweight LVGL radar demonstrator. It proves vertical
   range gestures and host navigation, but does not yet download or render the
   MeteoPlaneRadar data.
@@ -36,8 +37,9 @@ for either upstream firmware.
 
 Validated output is written to
 `.pio/build/waveshare-prototype/firmware.factory.bin`. The original display and
-gesture prototype was hardware-tested; network, persisted clock settings and
-SNTP changes still require a new physical smoke test.
+gesture prototype, persisted clock settings, Wi-Fi and SNTP were hardware-
+tested. The newly connected Home Assistant/Open-Meteo data worker still needs
+a physical smoke test.
 
 The integrated upstream code remains covered by the MIT licenses in the two
 submodules. Preserve both license files when distributing combined binaries.

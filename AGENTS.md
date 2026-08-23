@@ -42,21 +42,20 @@ physical display. The following are verified:
 - horizontal screen switching, vertical radar range gestures and automatic
   rotation work and remain stable.
 
-The original display/gesture baseline was hardware-tested. The following newer
-clock integration slice is compiled but still needs a fresh physical smoke
-test:
-
 - `clock.dashboard` loads the original `ClockConfig` schema and migrations;
 - the host reuses the upstream `clock-wifi` NVS and Improv Serial provisioning;
 - the host owns SNTP and publishes real Czech local time to the clock dashboard;
-- clock sensor/weather values are still deterministic demo values;
+- persisted clock appearance/entity settings, Wi-Fi and SNTP have been verified
+  on the physical device;
+- clock sensor/weather demo values have been removed; the extracted
+  `ClockDataService` now supplies Home Assistant or Open-Meteo snapshots. This
+  newest data-service slice is compiled but still needs a physical smoke test;
 - `meteo.radar` is a visual/gesture demonstrator and does not use real
   MeteoPlaneRadar network data;
-- the common web configuration, Home Assistant/Open-Meteo data worker and
-  production OTA flows are not connected yet.
+- the common web configuration and production OTA flows are not connected yet.
 
-Do not extend the demo values or demo radar into parallel production
-implementations. Replace them by adapting the proven upstream functionality.
+Do not extend the remaining demo radar into a parallel production
+implementation. Replace it by adapting the proven upstream functionality.
 
 ## Non-negotiable architecture
 
@@ -176,6 +175,12 @@ Reuse rather than recreate:
 the real upstream schema, checksum, persistence and migrations. The remaining
 `FirmwareUpdateServiceStub.cpp` is a prototype link shim, not an intended
 production replacement. Remove it when host-owned OTA is adapted.
+
+`firmware/lib/clock_data_service` is a temporary, provenance-marked extraction
+from the pinned `WaveshareHodiny.ino`. It preserves the upstream HTTP clients,
+parsers, intervals and FreeRTOS handoff without compiling the second
+application entry point. Do not let this become a silent long-lived fork:
+upstream the service boundary and replace the extraction with a thin wrapper.
 
 ### Meteo module
 
@@ -307,9 +312,11 @@ Run the dependency-free host tests from the repository root:
 
 ```powershell
 g++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/lib/app_core/include `
+  -Iwaveshare-hodiny/WaveshareHodiny `
   firmware/lib/app_core/src/AppConfig.cpp `
   firmware/lib/app_core/src/GestureRecognizer.cpp `
   firmware/lib/app_core/src/ScreenManager.cpp `
+  waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp `
   firmware/test/native/test_runner.cpp `
   -o firmware/test/native/build/app_core_tests.exe
 firmware\test\native\build\app_core_tests.exe
@@ -341,13 +348,14 @@ was done.
 Current host tests cover configuration normalization, the at-least-one-screen
 invariant, configured ordering, gesture classification/direction/debounce,
 disabled-screen skipping, screen navigation and automatic rotation. Extend
-these tests whenever the host contracts change.
+these tests whenever the host contracts change. They also cover the reused
+day/night transition tolerance, offsets and unavailable-data behavior.
 
 ## Near-term implementation order
 
-1. Extract the existing Home Assistant and Open-Meteo worker behind a
-   `ClockValues` queue and replace the remaining clock sensor/weather demo
-   values. `ClockConfig`, host Wi-Fi and SNTP are already wired in code.
+1. Upstream the current provenance-marked `ClockDataService` extraction into
+   `waveshare-hodiny`, then replace the extracted source with a thin forwarding
+   wrapper like the other upstream adapters.
 2. Replace the radar demonstrator with the real Meteo data/cache/rendering
    adapter while retaining vertical range gestures.
 3. Add the remaining Meteo screens as separate stable-ID modules.

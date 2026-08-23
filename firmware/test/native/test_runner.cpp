@@ -1,4 +1,5 @@
 #include "AppConfig.h"
+#include "DayNightLogic.h"
 #include "GestureRecognizer.h"
 #include "ScreenManager.h"
 
@@ -129,6 +130,94 @@ void testAppConfigKeepsOneScreenReachable() {
   AppConfig empty{};
   empty.schemaVersion = AppConfig::kSchemaVersion;
   CHECK(!empty.validate());
+}
+
+void testDayNightTransitionTimestampToleranceAndFallback() {
+  int64_t selected = -1;
+  constexpr int64_t expected = 1'700'001'000;
+
+  CHECK(clockSelectCompletedTransitionTimestamp(
+      false, 0, true, expected, selected));
+  CHECK_EQ(selected, expected);
+
+  // A Home Assistant last_changed value on either side of the expected
+  // transition is trusted while it is within the documented five-minute
+  // tolerance.
+  CHECK(clockSelectCompletedTransitionTimestamp(
+      true, expected - 5 * 60, true, expected, selected));
+  CHECK_EQ(selected, expected - 5 * 60);
+  CHECK(clockSelectCompletedTransitionTimestamp(
+      true, expected + 5 * 60, true, expected, selected));
+  CHECK_EQ(selected, expected + 5 * 60);
+
+  // When the observed value drifts farther away, use the forecast timestamp
+  // instead of propagating a stale entity update.
+  CHECK(clockSelectCompletedTransitionTimestamp(
+      true, expected - 5 * 60 - 1, true, expected, selected));
+  CHECK_EQ(selected, expected);
+  CHECK(clockSelectCompletedTransitionTimestamp(
+      true, expected + 5 * 60 + 1, true, expected, selected));
+  CHECK_EQ(selected, expected);
+
+  selected = 123;
+  CHECK(!clockSelectCompletedTransitionTimestamp(
+      true, expected, false, 0, selected));
+  CHECK_EQ(selected, 123);
+}
+
+void testDayNightOffsetsAndTransitions() {
+  constexpr int64_t sunrise = 1'700'001'000;
+  constexpr int64_t sunset = 1'700'004'600;
+  constexpr int64_t validNow = 1'700'005'000;
+
+  // With no offset, the current horizon state is used directly and does not
+  // require a valid wall clock or transition timestamps.
+  CHECK(clockEvaluateSunDecision(true, 0, 0, 0, false, 0, false, 0) ==
+        ClockSunDecision::Day);
+  CHECK(clockEvaluateSunDecision(false, 0, 0, 0, false, 0, false, 0) ==
+        ClockSunDecision::Night);
+
+  // Positive sunrise offset delays the day transition.
+  CHECK(clockEvaluateSunDecision(true, 15, 0, sunrise + 14 * 60,
+                                 true, sunrise, false, 0) ==
+        ClockSunDecision::Night);
+  CHECK(clockEvaluateSunDecision(true, 15, 0, sunrise + 15 * 60,
+                                 true, sunrise, false, 0) ==
+        ClockSunDecision::Day);
+
+  // Positive sunset offset delays the night transition.
+  CHECK(clockEvaluateSunDecision(false, 0, 15, sunset + 14 * 60,
+                                 true, sunset, false, 0) ==
+        ClockSunDecision::Day);
+  CHECK(clockEvaluateSunDecision(false, 0, 15, sunset + 15 * 60,
+                                 true, sunset, false, 0) ==
+        ClockSunDecision::Night);
+
+  // Negative sunset offset advances night while the horizon still reports
+  // day; negative sunrise offset advances day while it reports night.
+  CHECK(clockEvaluateSunDecision(true, 0, -15, sunset - 15 * 60 - 1,
+                                 false, 0, true, sunset) ==
+        ClockSunDecision::Day);
+  CHECK(clockEvaluateSunDecision(true, 0, -15, sunset - 15 * 60,
+                                 false, 0, true, sunset) ==
+        ClockSunDecision::Night);
+  CHECK(clockEvaluateSunDecision(false, -15, 0, sunrise - 15 * 60 - 1,
+                                 false, 0, true, sunrise) ==
+        ClockSunDecision::Night);
+  CHECK(clockEvaluateSunDecision(false, -15, 0, sunrise - 15 * 60,
+                                 false, 0, true, sunrise) ==
+        ClockSunDecision::Day);
+
+  // Positive/negative offsets require a valid current timestamp. Missing
+  // required transition data is unavailable as well.
+  CHECK(clockEvaluateSunDecision(true, 15, 0, validNow - 1'000'000'000,
+                                 true, sunrise, false, 0) ==
+        ClockSunDecision::Unavailable);
+  CHECK(clockEvaluateSunDecision(true, 15, 0, validNow, false, 0, false, 0) ==
+        ClockSunDecision::Unavailable);
+  CHECK(clockEvaluateSunDecision(true, 0, -15, validNow - 1'000'000'000,
+                                 false, 0, true, sunset) ==
+        ClockSunDecision::Unavailable);
 }
 
 GestureEvent recognize(GestureRecognizer& recognizer, bool& recognized,
@@ -473,6 +562,8 @@ int main() {
   testAppConfigNormalizesAndPreservesOrder();
   testAppConfigFallbackAndEditing();
   testAppConfigKeepsOneScreenReachable();
+  testDayNightTransitionTimestampToleranceAndFallback();
+  testDayNightOffsetsAndTransitions();
   testGestureDirectionsAndDebounce();
   testGestureTapAndLongPress();
   testScreenManagerNavigationAndDispatch();
