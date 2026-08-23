@@ -78,20 +78,100 @@ bool waitForVsyncAfter(uint32_t generation, const char* phase,
   return true;
 }
 
-bool startPanelFromKnownOrigin(const char* phase) {
-  esp_err_t result = esp_lcd_panel_reset(panel_handle);
-  if (result == ESP_OK) result = esp_lcd_panel_init(panel_handle);
-  if (result != ESP_OK) {
-    Serial.printf("Error: LCD full start failed during %s (0x%x)\n", phase,
-                  static_cast<unsigned>(result));
+esp_lcd_rgb_panel_config_t makePanelConfig() {
+  esp_lcd_rgb_panel_config_t config = {};
+  config.clk_src = LCD_CLK_SRC_DEFAULT;
+  config.timings.pclk_hz = kPanelPixelClockHz;
+  config.timings.h_res = ESP_PANEL_LCD_HEIGHT;
+  config.timings.v_res = ESP_PANEL_LCD_WIDTH;
+  config.timings.hsync_pulse_width = ESP_PANEL_LCD_RGB_TIMING_HPW;
+  config.timings.hsync_back_porch = ESP_PANEL_LCD_RGB_TIMING_HBP;
+  config.timings.hsync_front_porch = ESP_PANEL_LCD_RGB_TIMING_HFP;
+  config.timings.vsync_pulse_width = ESP_PANEL_LCD_RGB_TIMING_VPW;
+  config.timings.vsync_back_porch = ESP_PANEL_LCD_RGB_TIMING_VBP;
+  config.timings.vsync_front_porch = ESP_PANEL_LCD_RGB_TIMING_VFP;
+  config.timings.flags.hsync_idle_low = 0;
+  config.timings.flags.vsync_idle_low = 0;
+  config.timings.flags.de_idle_high = 0;
+  config.timings.flags.pclk_active_neg = false;
+  config.timings.flags.pclk_idle_high = 0;
+  config.data_width = ESP_PANEL_LCD_RGB_DATA_WIDTH;
+  config.bits_per_pixel = ESP_PANEL_LCD_RGB_PIXEL_BITS;
+  config.num_fbs = ESP_PANEL_LCD_RGB_FRAME_BUF_NUM;
+  config.bounce_buffer_size_px = ESP_PANEL_LCD_RGB_BOUNCE_BUF_SIZE;
+  config.psram_trans_align = 64;
+  config.hsync_gpio_num = ESP_PANEL_LCD_PIN_NUM_RGB_HSYNC;
+  config.vsync_gpio_num = ESP_PANEL_LCD_PIN_NUM_RGB_VSYNC;
+  config.de_gpio_num = ESP_PANEL_LCD_PIN_NUM_RGB_DE;
+  config.pclk_gpio_num = ESP_PANEL_LCD_PIN_NUM_RGB_PCLK;
+  config.disp_gpio_num = ESP_PANEL_LCD_PIN_NUM_RGB_DISP;
+  const int dataGpios[] = {
+      ESP_PANEL_LCD_PIN_NUM_RGB_DATA0,  ESP_PANEL_LCD_PIN_NUM_RGB_DATA1,
+      ESP_PANEL_LCD_PIN_NUM_RGB_DATA2,  ESP_PANEL_LCD_PIN_NUM_RGB_DATA3,
+      ESP_PANEL_LCD_PIN_NUM_RGB_DATA4,  ESP_PANEL_LCD_PIN_NUM_RGB_DATA5,
+      ESP_PANEL_LCD_PIN_NUM_RGB_DATA6,  ESP_PANEL_LCD_PIN_NUM_RGB_DATA7,
+      ESP_PANEL_LCD_PIN_NUM_RGB_DATA8,  ESP_PANEL_LCD_PIN_NUM_RGB_DATA9,
+      ESP_PANEL_LCD_PIN_NUM_RGB_DATA10, ESP_PANEL_LCD_PIN_NUM_RGB_DATA11,
+      ESP_PANEL_LCD_PIN_NUM_RGB_DATA12, ESP_PANEL_LCD_PIN_NUM_RGB_DATA13,
+      ESP_PANEL_LCD_PIN_NUM_RGB_DATA14, ESP_PANEL_LCD_PIN_NUM_RGB_DATA15,
+  };
+  for (size_t index = 0; index < ESP_PANEL_LCD_RGB_DATA_WIDTH; ++index) {
+    config.data_gpio_nums[index] = dataGpios[index];
+  }
+  config.flags.disp_active_low = 0;
+  config.flags.refresh_on_demand = 0;
+  config.flags.fb_in_psram = true;
+  config.flags.double_fb = true;
+  config.flags.no_fb = 0;
+  config.flags.bb_invalidate_cache = 0;
+  return config;
+}
+
+bool bindPanelBuffersAndCallbacks(esp_lcd_panel_handle_t handle,
+                                  void*& firstBuffer, void*& secondBuffer) {
+  if (esp_lcd_rgb_panel_get_frame_buffer(handle, 2, &firstBuffer,
+                                         &secondBuffer) != ESP_OK ||
+      firstBuffer == nullptr || secondBuffer == nullptr) {
     return false;
   }
 
+  esp_lcd_rgb_panel_event_callbacks_t callbacks = {};
+  callbacks.on_vsync = onVsync;
+  return esp_lcd_rgb_panel_register_event_callbacks(handle, &callbacks,
+                                                     nullptr) == ESP_OK;
+}
+
+bool createFreshPanel() {
+  esp_lcd_rgb_panel_config_t config = makePanelConfig();
+  esp_lcd_panel_handle_t newPanel = nullptr;
+  esp_err_t result = esp_lcd_new_rgb_panel(&config, &newPanel);
+  void* newFrameBuffer1 = nullptr;
+  void* newFrameBuffer2 = nullptr;
+  if (result == ESP_OK &&
+      !bindPanelBuffersAndCallbacks(newPanel, newFrameBuffer1,
+                                    newFrameBuffer2)) {
+    result = ESP_FAIL;
+  }
+  if (result == ESP_OK) result = esp_lcd_panel_reset(newPanel);
+  if (result == ESP_OK) result = esp_lcd_panel_init(newPanel);
+  if (result != ESP_OK) {
+    Serial.printf("Error: LCD driver recreation failed (0x%x)\n",
+                  static_cast<unsigned>(result));
+    if (newPanel != nullptr) esp_lcd_panel_del(newPanel);
+    return false;
+  }
+
+  panel_handle = newPanel;
+  frameBuffer1 = newFrameBuffer1;
+  frameBuffer2 = newFrameBuffer2;
+  lv_disp_draw_buf_init(&drawBuffer, frameBuffer1, frameBuffer2, 480 * 480);
+
   const uint32_t generation = currentVsyncGeneration();
-  const bool synchronized =
-      waitForVsyncAfter(generation, phase, flushVsyncTimeoutCount);
+  const bool synchronized = waitForVsyncAfter(
+      generation, "RGB driver recreation", flushVsyncTimeoutCount);
+  if (!synchronized) return false;
   lv_obj_invalidate(lv_scr_act());
-  return synchronized;
+  return true;
 }
 
 void flushDisplay(lv_disp_drv_t* driver, const lv_area_t* area,
@@ -144,18 +224,9 @@ bool displayHostBegin(TouchSampleCallback touchCallback) {
     return false;
   }
 
-  if (esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 2, &frameBuffer1,
-                                         &frameBuffer2) != ESP_OK ||
-      frameBuffer1 == nullptr || frameBuffer2 == nullptr) {
-    return false;
-  }
-
   vsyncSemaphore = xSemaphoreCreateBinary();
   if (vsyncSemaphore == nullptr) return false;
-  esp_lcd_rgb_panel_event_callbacks_t panelCallbacks = {};
-  panelCallbacks.on_vsync = onVsync;
-  if (esp_lcd_rgb_panel_register_event_callbacks(
-          panel_handle, &panelCallbacks, nullptr) != ESP_OK) {
+  if (!bindPanelBuffersAndCallbacks(panel_handle, frameBuffer1, frameBuffer2)) {
     vSemaphoreDelete(vsyncSemaphore);
     vsyncSemaphore = nullptr;
     return false;
@@ -201,38 +272,49 @@ void displayHostRequestFullRedraw() {
 
 bool displayHostBeginStorageWrite() {
   if (storageWriteSuspended) return true;
+  if (drawBuffer.flushing != 0) {
+    Serial.println("Error: refusing to delete LCD driver during an LVGL flush");
+    return false;
+  }
 
   // In bounce-buffer mode the EOF ISR copies the next rows from a PSRAM frame
   // buffer. NVS/flash writes disable the external-memory cache in the bundled
-  // Arduino framework, so continuous scanout cannot be kept coherent. Stop the
-  // LCD peripheral before touching flash; the resume path performs the same
-  // complete initialization sequence as boot and resets the bounce position.
+  // Arduino framework, so continuous scanout cannot be kept coherent. The RGB
+  // panel reset API does not stop GDMA or discard the driver's bounce state;
+  // delete the complete driver object while no LVGL flush is active instead.
   const uint32_t generation = currentVsyncGeneration();
-  waitForVsyncAfter(generation, "storage-write boundary",
-                    flushVsyncTimeoutCount);
+  if (!waitForVsyncAfter(generation, "storage-write boundary",
+                         flushVsyncTimeoutCount)) {
+    return false;
+  }
   if (!forcedOff) Set_Backlight(0);
 
-  const esp_err_t result = esp_lcd_panel_reset(panel_handle);
+  const esp_err_t result = esp_lcd_panel_del(panel_handle);
   if (result != ESP_OK) {
-    Serial.printf("Error: LCD suspend failed before storage write (0x%x)\n",
+    Serial.printf("Error: LCD driver stop failed before storage write (0x%x)\n",
                   static_cast<unsigned>(result));
     if (!forcedOff) Set_Backlight(currentBrightness);
     return false;
   }
 
+  panel_handle = nullptr;
+  frameBuffer1 = nullptr;
+  frameBuffer2 = nullptr;
   storageWriteSuspended = true;
-  Serial.println("Display: scanout suspended for storage write");
+  Serial.println("Display: RGB driver stopped for storage write");
   return true;
 }
 
 bool displayHostEndStorageWrite() {
   if (!storageWriteSuspended) return true;
-  storageWriteSuspended = false;
 
-  const bool started = startPanelFromKnownOrigin("storage-write recovery");
+  const bool started = createFreshPanel();
+  if (!started) return false;
+
+  storageWriteSuspended = false;
   if (!forcedOff) Set_Backlight(currentBrightness);
-  if (started) Serial.println("Display: scanout restarted after storage write");
-  return started;
+  Serial.println("Display: RGB driver recreated after storage write");
+  return true;
 }
 
 void displayHostSetBrightness(uint8_t brightness) {
@@ -250,9 +332,6 @@ void displayHostSetForcedOff(bool off) {
   }
 
   LCD_Wake();
-  // The upstream wake helper requests an in-stream DMA restart. Hide that
-  // transient and immediately establish the same deterministic origin as boot.
-  startPanelFromKnownOrigin("display wake");
   Set_Backlight(currentBrightness);
 }
 

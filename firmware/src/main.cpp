@@ -221,7 +221,7 @@ void loop() {
       Serial.println("Warning: clock configuration could not be persisted");
     }
     if (displaySuspended && !displayHostEndStorageWrite()) {
-      Serial.println("Warning: display could not recover after configuration save");
+      halt("display driver recreation failed after configuration save");
     }
   }
 
@@ -232,7 +232,7 @@ void loop() {
   if (webStorageWriteSuspended) {
     webStorageWriteSuspended = false;
     if (!displayHostEndStorageWrite()) {
-      Serial.println("Warning: display could not recover after web save");
+      halt("display driver recreation failed after web save");
     }
   }
   applyPendingWebConfiguration(millis());

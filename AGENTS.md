@@ -315,26 +315,35 @@ shifted vertical position; another Save/restart merely selected a different
 offset or happened to correct it. A Save therefore persists and applies the
 configuration, then requests one normal VSYNC-gated LVGL redraw. Do not restore
 the upstream immediate restart, its second delayed restart, or a deferred
-in-stream restart after Save. The controlled storage stop/full-start path still
-needs a physical stress test.
+in-stream restart after Save.
 
 The bundled Arduino 3.3.11 libraries use ESP-IDF 5.5.x with
 `CONFIG_LCD_RGB_RESTART_IN_VSYNC=1`, but without PSRAM XIP or an IRAM-safe RGB
 ISR. In PSRAM-framebuffer + bounce-buffer mode, NVS/flash writes therefore stop
 the ISR from refilling the internal bounce buffers and can desynchronize the
-scanout. Complete boot-time NVS initialization before `LCD_Init()`. Runtime
-configuration writes must be bracketed by `displayHostBeginStorageWrite()` and
-`displayHostEndStorageWrite()`: backlight off, panel reset, storage write, full
-panel reset/init, fresh VSYNC, redraw, backlight restore. The full init resets
-the bounce position and differs materially from `esp_lcd_rgb_panel_restart()`,
-which only resets FIFO/GDMA while the LCD engine keeps running.
+scanout. A physical test proved that `esp_lcd_panel_reset()` plus
+`esp_lcd_panel_init()` on the existing handle is not a cold restart and still
+leaves the image persistently wrapped: the public reset operation resets the
+LCD/FIFO hardware but does not delete the RGB driver object, GDMA descriptors
+or callbacks. The storage-write guard must therefore call
+`esp_lcd_panel_del()` before NVS, then create a fresh RGB panel with the same
+20-line bounce configuration and 8 MHz PCLK, obtain both new framebuffer
+addresses, register the VSYNC callback, reset/init the panel and reinitialize
+the existing LVGL draw-buffer descriptor. Never let LVGL run while its old
+framebuffer pointers refer to the deleted driver. A recreation failure is fatal
+because continuing would dereference freed buffers. This lifecycle has not yet
+passed physical repeated-Save testing.
 
-The current guard covers clock configuration saves from both the web form and
-the on-device overlay, including the adjacent web-mode write. Any future
-runtime persistence path (notably changed Wi-Fi credentials, web-password
-changes or OTA metadata) must use the same host-owned storage-write guard; do
-not add an uncoordinated `Preferences.put*`, `remove` or flash write while RGB
-scanout is active.
+A no-bounce experiment using direct double-framebuffer PSRAM/EDMA scanout at
+8 MHz was physically rejected: the image jittered horizontally on every LVGL
+refresh, faster on the radar screen. Do not restore the integration macro
+override that sets `ESP_PANEL_LCD_RGB_BOUNCE_BUF_SIZE` to zero. The current
+known-good normal-redraw baseline is the upstream 20-line bounce buffer, 8 MHz
+PCLK and the VSYNC flush gate. A proper Save fix must genuinely stop/delete and
+recreate the RGB driver pipeline or change the framework configuration; it must
+not substitute direct PSRAM scanout without a new measured design. The current
+implementation uses the full delete/recreate option only around configuration
+storage writes; ordinary screen refreshes retain the upstream bounce pipeline.
 
 Do not remove the VSYNC gate or restore 14 MHz without reproducing the stress
 case. A serial `LCD VSYNC timeout during ...` warning means the panel callback

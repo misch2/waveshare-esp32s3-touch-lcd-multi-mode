@@ -55,17 +55,25 @@ short repeated/shifted horizontal row blocks under full-refresh load. This base
 timing change has passed a hardware smoke test. Configuration saves never use
 the in-stream RGB DMA restart: hardware testing showed that even a
 VSYNC-scheduled restart could leave the complete framebuffer cyclically shifted
-by several rows until another restart. Save uses a controlled stop, storage
-write and full boot-style panel start, followed by a normal VSYNC-gated redraw.
-This path was not compiled by Codex and still needs a hardware stress test;
-watch the serial log for `LCD VSYNC timeout during ...` warnings.
+by several rows until another restart. A reset/init of the existing driver also
+failed because it did not stop GDMA or discard the driver's bounce state. The
+current Save transaction therefore deletes the complete RGB driver before NVS,
+then creates a new driver, framebuffers, DMA descriptors and bounce buffers and
+rebinds LVGL afterwards. This full lifecycle still needs physical testing.
+Watch the serial log for `LCD VSYNC timeout during ...` warnings.
 
 The root cause is flash/cache interaction, not the stored values themselves.
-The bundled framework cannot refill the 20-line bounce buffers from a PSRAM
-framebuffer while NVS disables the external-memory cache. First-boot storage is
-therefore initialized before the LCD starts. Runtime configuration saves briefly
-blank and reset the panel, perform all associated NVS writes, then use the full
-boot-style panel initialization to restore a known line origin before redrawing.
+ESP-IDF explicitly states that a PSRAM framebuffer with bounce buffers cannot
+operate while NVS disables the external-memory cache. Resetting the existing
+panel handle did not stop GDMA and did not reproduce a cold start; physical
+testing still produced a persistent vertical wrap after Save. The integration
+briefly tested direct double-framebuffer PSRAM/EDMA scanout without bounce
+buffers. That avoided the cache-dependent refill ISR, but caused horizontal
+jitter on every refresh, faster on the radar screen, so the experiment was
+reverted. The proven normal-redraw baseline remains the upstream 20-line bounce
+buffer with 8 MHz PCLK and the VSYNC flush gate. Only configuration persistence
+uses the full delete/recreate transaction. Codex intentionally did not compile
+these changes.
 
 The integrated upstream code remains covered by the MIT licenses in the two
 submodules. Preserve both license files when distributing combined binaries.
