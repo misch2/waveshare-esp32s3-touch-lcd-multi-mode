@@ -7,7 +7,9 @@ using TouchSampleCallback = void (*)(bool pressed, int16_t x, int16_t y,
 
 bool displayHostBegin(TouchSampleCallback touchCallback);
 void displayHostLoop();
-void displayHostRequestResync();
+void displayHostRequestFullRedraw();
+bool displayHostBeginStorageWrite();
+bool displayHostEndStorageWrite();
 void displayHostSetBrightness(uint8_t brightness);
 void displayHostSetForcedOff(bool forcedOff);
 bool displayHostForcedOff();

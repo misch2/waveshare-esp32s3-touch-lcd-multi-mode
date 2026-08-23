@@ -40,6 +40,7 @@ bool gesturePending = false;
 bool clockTimeWasSynchronized = false;
 bool webConfigApplyPending = false;
 uint32_t webConfigApplyAt = 0;
+bool webStorageWriteSuspended = false;
 
 void loadClockConfigForWeb(ClockConfig& config) { config = clockConfig; }
 
@@ -56,6 +57,8 @@ bool saveClockConfigFromWeb(const ClockConfig& config,
       candidate.homeAssistantToken[0] = '\0';
     }
   }
+  if (!displayHostBeginStorageWrite()) return false;
+  webStorageWriteSuspended = true;
   if (!clockConfigSave(candidate)) return false;
 
   clockConfig = candidate;
@@ -107,7 +110,7 @@ void applyPendingWebConfiguration(uint32_t nowMs) {
   webConfigApplyAt = 0;
   clockScreen.applyConfiguration();
   clockDataService.applyConfig(clockConfig);
-  displayHostRequestResync();
+  displayHostRequestFullRedraw();
 }
 
 void onTouchSample(bool pressed, int16_t x, int16_t y, uint32_t nowMs) {
@@ -143,6 +146,23 @@ void setup() {
     }
   }
 
+  // Finish all host-owned first-boot NVS reads and possible default writes
+  // before RGB scanout starts. Bounce-buffer refill reads from PSRAM and is not
+  // safe while the bundled framework disables external cache for flash access.
+  if (!appConfigLoad(appConfig)) {
+    appConfig = app_core::AppConfig::defaults();
+    if (!appConfigSave(appConfig)) {
+      Serial.println("Warning: app configuration could not be persisted");
+    }
+  }
+  if (!network_host::begin()) {
+    Serial.println("Warning: network host initialization failed");
+  }
+  web_host::begin(loadClockConfigForWeb, saveClockConfigFromWeb,
+                  updateClockWebStatus, loadSunTransitionTimes,
+                  requestDayNightRefresh, loadDayNightStatus,
+                  setDisplayForcedOff, displayIsForcedOff);
+
   I2C_Init();
   Set_EXIOS(0x0C);
   TCA9554PWR_Init(0x70);
@@ -151,26 +171,13 @@ void setup() {
 
   if (!displayHostBegin(onTouchSample)) halt("display host init failed");
   displayHostSetBrightness(clockConfig.dayBrightness);
-  if (!appConfigLoad(appConfig)) {
-    appConfig = app_core::AppConfig::defaults();
-    if (!appConfigSave(appConfig)) {
-      Serial.println("Warning: app configuration could not be persisted");
-    }
-  }
   if (!screenManager.add(clockScreen) || !screenManager.add(radarScreen)) {
     halt("screen registration failed");
   }
   if (!screenManager.begin()) halt("screen init failed");
-  if (!network_host::begin()) {
-    Serial.println("Warning: network host initialization failed");
-  }
   if (!clockDataService.begin(clockConfig)) {
     Serial.println("Warning: clock data service initialization failed");
   }
-  web_host::begin(loadClockConfigForWeb, saveClockConfigFromWeb,
-                  updateClockWebStatus, loadSunTransitionTimes,
-                  requestDayNightRefresh, loadDayNightStatus,
-                  setDisplayForcedOff, displayIsForcedOff);
 
   Serial.printf("Ready: %u screens, active=%s, PSRAM free=%u\n",
                 static_cast<unsigned>(screenManager.moduleCount()),
@@ -202,19 +209,32 @@ void loop() {
 
   uint8_t requestedWebMode = 0;
   if (clockScreen.takeConfigSaveRequest(requestedWebMode)) {
-    if (clockConfigSave(clockConfig)) {
+    const bool displaySuspended = displayHostBeginStorageWrite();
+    if (displaySuspended && clockConfigSave(clockConfig)) {
       clockDataService.applyConfig(clockConfig);
       if (!web_host::setMode(
               static_cast<web_host::Mode>(requestedWebMode))) {
         Serial.println("Warning: web mode could not be persisted");
       }
-      displayHostRequestResync();
+      displayHostRequestFullRedraw();
     } else {
       Serial.println("Warning: clock configuration could not be persisted");
+    }
+    if (displaySuspended && !displayHostEndStorageWrite()) {
+      Serial.println("Warning: display could not recover after configuration save");
     }
   }
 
   web_host::loop();
+  // The upstream web handler persists its web mode after our ClockConfig save
+  // callback returns. Keep scanout stopped until the whole request completes so
+  // both NVS writes are covered by one clean stop/start sequence.
+  if (webStorageWriteSuspended) {
+    webStorageWriteSuspended = false;
+    if (!displayHostEndStorageWrite()) {
+      Serial.println("Warning: display could not recover after web save");
+    }
+  }
   applyPendingWebConfiguration(millis());
 
   if (gesturePending) {

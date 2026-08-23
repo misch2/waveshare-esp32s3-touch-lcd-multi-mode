@@ -308,13 +308,33 @@ They have intentionally not been compiled by Codex at the user's request. The
 8 MHz/VSYNC combination has passed a physical display smoke test and eliminated
 the transient artifacts during normal redraws.
 
-Configuration saves must call `displayHostRequestResync()`, never restart the
-panel directly. The host first forces and completes a normal full-frame flush,
-then performs one restart between generation-checked VSYNC boundaries and
-invalidates the screen once more. Requests are coalesced and all VSYNC waits are
-bounded to 100 ms. Do not restore the upstream immediate restart or its second
-delayed restart after Save; both can race RGB DMA and leave the image vertically
-shifted. This Save-specific recovery still needs a physical stress test.
+Configuration saves must call `displayHostRequestFullRedraw()`, never request
+an in-stream panel restart. Physical testing showed that even a VSYNC-scheduled
+`esp_lcd_rgb_panel_restart()` could leave the whole image in a stable, cyclically
+shifted vertical position; another Save/restart merely selected a different
+offset or happened to correct it. A Save therefore persists and applies the
+configuration, then requests one normal VSYNC-gated LVGL redraw. Do not restore
+the upstream immediate restart, its second delayed restart, or a deferred
+in-stream restart after Save. The controlled storage stop/full-start path still
+needs a physical stress test.
+
+The bundled Arduino 3.3.11 libraries use ESP-IDF 5.5.x with
+`CONFIG_LCD_RGB_RESTART_IN_VSYNC=1`, but without PSRAM XIP or an IRAM-safe RGB
+ISR. In PSRAM-framebuffer + bounce-buffer mode, NVS/flash writes therefore stop
+the ISR from refilling the internal bounce buffers and can desynchronize the
+scanout. Complete boot-time NVS initialization before `LCD_Init()`. Runtime
+configuration writes must be bracketed by `displayHostBeginStorageWrite()` and
+`displayHostEndStorageWrite()`: backlight off, panel reset, storage write, full
+panel reset/init, fresh VSYNC, redraw, backlight restore. The full init resets
+the bounce position and differs materially from `esp_lcd_rgb_panel_restart()`,
+which only resets FIFO/GDMA while the LCD engine keeps running.
+
+The current guard covers clock configuration saves from both the web form and
+the on-device overlay, including the adjacent web-mode write. Any future
+runtime persistence path (notably changed Wi-Fi credentials, web-password
+changes or OTA metadata) must use the same host-owned storage-write guard; do
+not add an uncoordinated `Preferences.put*`, `remove` or flash write while RGB
+scanout is active.
 
 Do not remove the VSYNC gate or restore 14 MHz without reproducing the stress
 case. A serial `LCD VSYNC timeout during ...` warning means the panel callback

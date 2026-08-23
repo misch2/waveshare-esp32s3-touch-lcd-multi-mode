@@ -52,12 +52,20 @@ the colliding Meteo routes unchanged.
 The integration display host selects an 8 MHz RGB pixel clock and waits for
 VSYNC before LVGL may reuse a flushed framebuffer. This is intended to prevent
 short repeated/shifted horizontal row blocks under full-refresh load. This base
-timing change has passed a hardware smoke test. Configuration saves additionally
-request one deferred panel recovery: a normal full-frame flush is completed
-first, the restart is bounded by fresh VSYNC generations, and a normal redraw
-follows it. This Save-specific change was not compiled by Codex and still needs
-a hardware stress test; watch the serial log for `LCD VSYNC timeout during ...`
-warnings.
+timing change has passed a hardware smoke test. Configuration saves never use
+the in-stream RGB DMA restart: hardware testing showed that even a
+VSYNC-scheduled restart could leave the complete framebuffer cyclically shifted
+by several rows until another restart. Save uses a controlled stop, storage
+write and full boot-style panel start, followed by a normal VSYNC-gated redraw.
+This path was not compiled by Codex and still needs a hardware stress test;
+watch the serial log for `LCD VSYNC timeout during ...` warnings.
+
+The root cause is flash/cache interaction, not the stored values themselves.
+The bundled framework cannot refill the 20-line bounce buffers from a PSRAM
+framebuffer while NVS disables the external-memory cache. First-boot storage is
+therefore initialized before the LCD starts. Runtime configuration saves briefly
+blank and reset the panel, perform all associated NVS writes, then use the full
+boot-style panel initialization to restore a known line origin before redrawing.
 
 The integrated upstream code remains covered by the MIT licenses in the two
 submodules. Preserve both license files when distributing combined binaries.

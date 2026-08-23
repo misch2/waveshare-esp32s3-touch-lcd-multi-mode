@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
 #include <esp_timer.h>
 #include <freertos/semphr.h>
@@ -25,11 +26,8 @@ SemaphoreHandle_t vsyncSemaphore = nullptr;
 portMUX_TYPE vsyncMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t vsyncGeneration = 0;
 uint32_t flushVsyncTimeoutCount = 0;
-uint32_t resyncVsyncTimeoutCount = 0;
 uint32_t lastVsyncTimeoutLogMs = 0;
-uint32_t completedFlushCount = 0;
-uint32_t flushCountAtResyncRequest = 0;
-bool resyncPending = false;
+bool storageWriteSuspended = false;
 
 bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t,
                        const esp_lcd_rgb_panel_event_data_t*, void*) {
@@ -80,6 +78,22 @@ bool waitForVsyncAfter(uint32_t generation, const char* phase,
   return true;
 }
 
+bool startPanelFromKnownOrigin(const char* phase) {
+  esp_err_t result = esp_lcd_panel_reset(panel_handle);
+  if (result == ESP_OK) result = esp_lcd_panel_init(panel_handle);
+  if (result != ESP_OK) {
+    Serial.printf("Error: LCD full start failed during %s (0x%x)\n", phase,
+                  static_cast<unsigned>(result));
+    return false;
+  }
+
+  const uint32_t generation = currentVsyncGeneration();
+  const bool synchronized =
+      waitForVsyncAfter(generation, phase, flushVsyncTimeoutCount);
+  lv_obj_invalidate(lv_scr_act());
+  return synchronized;
+}
+
 void flushDisplay(lv_disp_drv_t* driver, const lv_area_t* area,
                   lv_color_t* pixels) {
   LCD_addWindow(area->x1, area->y1, area->x2, area->y2,
@@ -92,33 +106,7 @@ void flushDisplay(lv_disp_drv_t* driver, const lv_area_t* area,
   const uint32_t submittedGeneration = currentVsyncGeneration();
   waitForVsyncAfter(submittedGeneration, "frame flush",
                     flushVsyncTimeoutCount);
-  ++completedFlushCount;
   lv_disp_flush_ready(driver);
-}
-
-void servicePendingResync() {
-  if (!resyncPending || forcedOff ||
-      completedFlushCount == flushCountAtResyncRequest) {
-    return;
-  }
-
-  // A save may arrive immediately after a full-frame flush. Wait for another
-  // clean frame boundary before asking the RGB driver to restart, then require
-  // a strictly newer VSYNC generation so a token from before the restart
-  // cannot make the recovery look complete.
-  const uint32_t beforeSafeBoundary = currentVsyncGeneration();
-  waitForVsyncAfter(beforeSafeBoundary, "pre-resync boundary",
-                    resyncVsyncTimeoutCount);
-
-  resyncPending = false;
-  const uint32_t beforeRestart = currentVsyncGeneration();
-  LCD_Resync();
-  waitForVsyncAfter(beforeRestart, "panel resync",
-                    resyncVsyncTimeoutCount);
-
-  // Present one normal LVGL frame after the restart. This is deliberately not
-  // a second LCD restart like the original clock firmware used after Save.
-  lv_obj_invalidate(lv_scr_act());
 }
 
 void readTouch(lv_indev_drv_t*, lv_indev_data_t* data) {
@@ -201,15 +189,50 @@ bool displayHostBegin(TouchSampleCallback touchCallback) {
   return esp_timer_start_periodic(tickTimer, 2000) == ESP_OK;
 }
 
-void displayHostLoop() {
-  lv_timer_handler();
-  servicePendingResync();
+void displayHostLoop() { lv_timer_handler(); }
+
+void displayHostRequestFullRedraw() {
+  // Configuration persistence can temporarily compete for memory bandwidth,
+  // but restarting RGB DMA after the write can itself leave the controller at
+  // a stable, cyclically shifted scan-line origin. A VSYNC-gated redraw is all
+  // that is needed to present the new LVGL state.
+  lv_obj_invalidate(lv_scr_act());
 }
 
-void displayHostRequestResync() {
-  resyncPending = true;
-  flushCountAtResyncRequest = completedFlushCount;
-  lv_obj_invalidate(lv_scr_act());
+bool displayHostBeginStorageWrite() {
+  if (storageWriteSuspended) return true;
+
+  // In bounce-buffer mode the EOF ISR copies the next rows from a PSRAM frame
+  // buffer. NVS/flash writes disable the external-memory cache in the bundled
+  // Arduino framework, so continuous scanout cannot be kept coherent. Stop the
+  // LCD peripheral before touching flash; the resume path performs the same
+  // complete initialization sequence as boot and resets the bounce position.
+  const uint32_t generation = currentVsyncGeneration();
+  waitForVsyncAfter(generation, "storage-write boundary",
+                    flushVsyncTimeoutCount);
+  if (!forcedOff) Set_Backlight(0);
+
+  const esp_err_t result = esp_lcd_panel_reset(panel_handle);
+  if (result != ESP_OK) {
+    Serial.printf("Error: LCD suspend failed before storage write (0x%x)\n",
+                  static_cast<unsigned>(result));
+    if (!forcedOff) Set_Backlight(currentBrightness);
+    return false;
+  }
+
+  storageWriteSuspended = true;
+  Serial.println("Display: scanout suspended for storage write");
+  return true;
+}
+
+bool displayHostEndStorageWrite() {
+  if (!storageWriteSuspended) return true;
+  storageWriteSuspended = false;
+
+  const bool started = startPanelFromKnownOrigin("storage-write recovery");
+  if (!forcedOff) Set_Backlight(currentBrightness);
+  if (started) Serial.println("Display: scanout restarted after storage write");
+  return started;
 }
 
 void displayHostSetBrightness(uint8_t brightness) {
@@ -227,10 +250,9 @@ void displayHostSetForcedOff(bool off) {
   }
 
   LCD_Wake();
-  // LCD_Wake already restarts the RGB panel. Do not follow it with another
-  // restart requested while the display was asleep.
-  resyncPending = false;
-  lv_obj_invalidate(lv_scr_act());
+  // The upstream wake helper requests an in-stream DMA restart. Hide that
+  // transient and immediately establish the same deterministic origin as boot.
+  startPanelFromKnownOrigin("display wake");
   Set_Backlight(currentBrightness);
 }
 
