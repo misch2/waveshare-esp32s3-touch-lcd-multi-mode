@@ -40,7 +40,8 @@ void observeConnection() {
   if (!mdnsStarted) {
     mdnsStarted = MDNS.begin(kMdnsName);
     if (mdnsStarted) {
-      Serial.printf("mDNS: http://%s.local/\n", kMdnsName);
+      MDNS.addService("http", "tcp", 80);
+      Serial.printf("mDNS HTTP: http://%s.local/\n", kMdnsName);
     }
   }
 

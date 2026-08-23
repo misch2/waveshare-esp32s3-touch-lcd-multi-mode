@@ -10,6 +10,7 @@
 struct ClockConfig;
 struct ClockValues;
 using ClockBrightnessPreviewCallback = void (*)(uint8_t brightness);
+using ClockSettingsOpenCallback = void (*)();
 
 /**
  * Adapter around the pinned waveshare-hodiny dashboard.
@@ -21,7 +22,8 @@ using ClockBrightnessPreviewCallback = void (*)(uint8_t brightness);
 class ClockScreen final : public ScreenModule {
  public:
   explicit ClockScreen(ClockConfig& config,
-                       ClockBrightnessPreviewCallback brightnessPreview);
+                       ClockBrightnessPreviewCallback brightnessPreview,
+                       ClockSettingsOpenCallback settingsOpen);
 
   const char* id() const override { return "clock.dashboard"; }
   const char* label() const override { return "Clock"; }
@@ -35,7 +37,10 @@ class ClockScreen final : public ScreenModule {
   void updateNetworkStatus(bool connected, const char* ipAddress);
   void updateLocalTime(const std::tm& localTime);
   void updateValues(const ClockValues& values);
-  bool takeConfigSaveRequest();
+  void applyConfiguration();
+  void updateWebStatus(bool active, uint8_t mode);
+  bool nightModeEnabled() const;
+  bool takeConfigSaveRequest(uint8_t& webMode);
 
  private:
   void saveSettings(uint8_t dayBrightness, uint8_t nightBrightness,
@@ -46,6 +51,7 @@ class ClockScreen final : public ScreenModule {
   void previewBrightness(uint8_t brightness);
 
   static void onBrightnessPreview(uint8_t brightness);
+  static void onSettingsOpen();
   static void onSettingsSave(uint8_t dayBrightness, uint8_t nightBrightness,
                              bool automaticDayNight, bool secondRingEnabled,
                              uint8_t secondEffect,
@@ -55,6 +61,7 @@ class ClockScreen final : public ScreenModule {
 
   ClockConfig& config_;
   ClockBrightnessPreviewCallback brightnessPreview_ = nullptr;
+  ClockSettingsOpenCallback settingsOpen_ = nullptr;
   lv_obj_t* screen_ = nullptr;
   lv_obj_t* returnScreen_ = nullptr;
   bool initialized_ = false;
@@ -63,4 +70,5 @@ class ClockScreen final : public ScreenModule {
   char lastWifiAddress_[16] = {};
   int64_t lastPresentedSecond_ = -1;
   bool configSavePending_ = false;
+  uint8_t pendingWebMode_ = 0;
 };

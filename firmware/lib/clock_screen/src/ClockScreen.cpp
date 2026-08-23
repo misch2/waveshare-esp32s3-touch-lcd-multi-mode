@@ -20,8 +20,11 @@ const char* kCzechMonths[] = {
 }  // namespace
 
 ClockScreen::ClockScreen(ClockConfig& config,
-                         ClockBrightnessPreviewCallback brightnessPreview)
-    : config_(config), brightnessPreview_(brightnessPreview) {
+                         ClockBrightnessPreviewCallback brightnessPreview,
+                         ClockSettingsOpenCallback settingsOpen)
+    : config_(config),
+      brightnessPreview_(brightnessPreview),
+      settingsOpen_(settingsOpen) {
   callbackTarget = this;
 }
 
@@ -39,7 +42,8 @@ bool ClockScreen::begin() {
   ClockValues values;
   clockDashboardInit(values, config_.dayBrightness, config_.nightBrightness,
                      config_.automaticDayNight,
-                     &ClockScreen::onBrightnessPreview, nullptr,
+                     &ClockScreen::onBrightnessPreview,
+                     &ClockScreen::onSettingsOpen,
                      &ClockScreen::onSettingsSave, nullptr, nullptr);
   clockDashboardApplyConfiguration(config_);
   clockDashboardSetWifiConnected(false);
@@ -88,6 +92,12 @@ void ClockScreen::onBrightnessPreview(uint8_t brightness) {
   if (callbackTarget != nullptr) callbackTarget->previewBrightness(brightness);
 }
 
+void ClockScreen::onSettingsOpen() {
+  if (callbackTarget != nullptr && callbackTarget->settingsOpen_ != nullptr) {
+    callbackTarget->settingsOpen_();
+  }
+}
+
 void ClockScreen::onSettingsSave(
     uint8_t dayBrightness, uint8_t nightBrightness, bool automaticDayNight,
     bool secondRingEnabled, uint8_t secondEffect, bool animatedWeatherIcons,
@@ -116,18 +126,16 @@ void ClockScreen::saveSettings(
   config_.animatedWeatherIcons = animatedWeatherIcons;
   config_.weatherIconStyle = weatherIconStyle;
   config_.automaticFirmwareUpdate = automaticFirmwareUpdate;
-
-  // The upstream overlay has a web-mode control, but the combined prototype
-  // has no web service yet. Do not persist or emulate that setting.
-  (void)webMode;
+  pendingWebMode_ = webMode;
 
   clockDashboardApplyConfiguration(config_);
   configSavePending_ = true;
 }
 
-bool ClockScreen::takeConfigSaveRequest() {
+bool ClockScreen::takeConfigSaveRequest(uint8_t& webMode) {
   const bool pending = configSavePending_;
   configSavePending_ = false;
+  if (pending) webMode = pendingWebMode_;
   return pending;
 }
 
@@ -197,4 +205,19 @@ void ClockScreen::updateLocalTime(const std::tm& localTime) {
 void ClockScreen::updateValues(const ClockValues& values) {
   if (!initialized_) return;
   clockDashboardUpdate(values);
+}
+
+void ClockScreen::applyConfiguration() {
+  if (!initialized_) return;
+  clockDashboardApplyConfiguration(config_);
+}
+
+void ClockScreen::updateWebStatus(bool active, uint8_t mode) {
+  if (!initialized_) return;
+  clockDashboardSetWebActive(active);
+  clockDashboardSetWebMode(mode);
+}
+
+bool ClockScreen::nightModeEnabled() const {
+  return initialized_ && clockDashboardNightModeEnabled();
 }

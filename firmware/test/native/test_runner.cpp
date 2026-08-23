@@ -1,5 +1,6 @@
 #include "AppConfig.h"
 #include "DayNightLogic.h"
+#include "HomeAssistantConnectionPolicy.h"
 #include "GestureRecognizer.h"
 #include "ScreenManager.h"
 
@@ -218,6 +219,31 @@ void testDayNightOffsetsAndTransitions() {
   CHECK(clockEvaluateSunDecision(true, 0, -15, validNow - 1'000'000'000,
                                  false, 0, true, sunset) ==
         ClockSunDecision::Unavailable);
+}
+
+void testHomeAssistantStoredTokenReusePolicy() {
+  constexpr const char *storedUrl = "http://ha.example:8123";
+
+  CHECK(homeAssistantMayReuseStoredToken("", storedUrl));
+  CHECK(homeAssistantMayReuseStoredToken(storedUrl, storedUrl));
+  CHECK(homeAssistantMayReuseStoredToken("", ""));
+
+  // URL identity is deliberately exact: changing scheme, host, or port must
+  // not allow a token stored for another Home Assistant endpoint to leak into
+  // the new save request.
+  CHECK(!homeAssistantMayReuseStoredToken("https://ha.example:8123",
+                                          storedUrl));
+  CHECK(!homeAssistantMayReuseStoredToken("http://other.example:8123",
+                                          storedUrl));
+  CHECK(!homeAssistantMayReuseStoredToken("http://ha.example:8124",
+                                          storedUrl));
+  CHECK(!homeAssistantMayReuseStoredToken("http://ha.example:8123/api",
+                                          storedUrl));
+
+  // A null URL is not an empty URL and cannot authorize reuse.
+  CHECK(!homeAssistantMayReuseStoredToken(nullptr, storedUrl));
+  CHECK(!homeAssistantMayReuseStoredToken(storedUrl, nullptr));
+  CHECK(!homeAssistantMayReuseStoredToken(nullptr, nullptr));
 }
 
 GestureEvent recognize(GestureRecognizer& recognizer, bool& recognized,
@@ -564,6 +590,7 @@ int main() {
   testAppConfigKeepsOneScreenReachable();
   testDayNightTransitionTimestampToleranceAndFallback();
   testDayNightOffsetsAndTransitions();
+  testHomeAssistantStoredTokenReusePolicy();
   testGestureDirectionsAndDebounce();
   testGestureTapAndLongPress();
   testScreenManagerNavigationAndDispatch();

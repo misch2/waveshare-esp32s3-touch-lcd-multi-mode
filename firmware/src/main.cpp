@@ -10,6 +10,7 @@
 #include "ClockScreen.h"
 #include "DisplayHost.h"
 #include "GestureRecognizer.h"
+#include "HomeAssistantConnectionPolicy.h"
 #include "I2C_Driver.h"
 #include "NetworkHost.h"
 #include "RadarScreen.h"
@@ -17,21 +18,97 @@
 #include "TCA9554PWR.h"
 #include "Display_ST7701.h"
 #include "UpstreamHardware.h"
+#include "WebHost.h"
 
 namespace {
 app_core::AppConfig appConfig = app_core::AppConfig::defaults();
 ClockConfig clockConfig;
 ClockDataService clockDataService;
+ClockValues latestClockValues;
 GestureRecognizer gestureRecognizer;
 ScreenManager screenManager(appConfig);
 
-void previewClockBrightness(uint8_t brightness) { Set_Backlight(brightness); }
+void previewClockBrightness(uint8_t brightness) {
+  displayHostSetBrightness(brightness);
+}
+void openClockSettings();
 
-ClockScreen clockScreen(clockConfig, previewClockBrightness);
+ClockScreen clockScreen(clockConfig, previewClockBrightness, openClockSettings);
 RadarScreen radarScreen;
 GestureEvent pendingGesture;
 bool gesturePending = false;
 bool clockTimeWasSynchronized = false;
+bool webConfigApplyPending = false;
+uint32_t webConfigApplyAt = 0;
+
+void loadClockConfigForWeb(ClockConfig& config) { config = clockConfig; }
+
+bool saveClockConfigFromWeb(const ClockConfig& config,
+                            bool tokenWasSubmitted) {
+  ClockConfig candidate = config;
+  if (!tokenWasSubmitted) {
+    if (homeAssistantMayReuseStoredToken(candidate.homeAssistantUrl,
+                                         clockConfig.homeAssistantUrl)) {
+      clockConfigCopy(candidate.homeAssistantToken,
+                      sizeof(candidate.homeAssistantToken),
+                      clockConfig.homeAssistantToken);
+    } else {
+      candidate.homeAssistantToken[0] = '\0';
+    }
+  }
+  if (!clockConfigSave(candidate)) return false;
+
+  clockConfig = candidate;
+  webConfigApplyPending = true;
+  webConfigApplyAt = millis() + 250;
+  return true;
+}
+
+void updateClockWebStatus(bool active) {
+  clockScreen.updateWebStatus(active, static_cast<uint8_t>(web_host::mode()));
+}
+
+void loadSunTransitionTimes(uint64_t& nextSunriseTimestamp,
+                            uint64_t& nextSunsetTimestamp) {
+  nextSunriseTimestamp = latestClockValues.nextSunriseTimestamp;
+  nextSunsetTimestamp = latestClockValues.nextSunsetTimestamp;
+}
+
+bool requestDayNightRefresh() {
+  return clockDataService.requestDayNightRefresh();
+}
+
+void loadDayNightStatus(bool& sunAvailable, bool& sunIsDay,
+                        bool& lightAvailable, bool& lightOn,
+                        bool& nightMode) {
+  sunAvailable = latestClockValues.sunStateAvailable;
+  sunIsDay = latestClockValues.weatherIsDay;
+  lightAvailable = latestClockValues.dayNightLightStateAvailable;
+  lightOn = latestClockValues.dayNightLightOn;
+  nightMode = clockScreen.nightModeEnabled();
+}
+
+void setDisplayForcedOff(bool forcedOff) {
+  displayHostSetForcedOff(forcedOff);
+}
+
+bool displayIsForcedOff() { return displayHostForcedOff(); }
+
+void openClockSettings() {
+  web_host::ensureActive();
+}
+
+void applyPendingWebConfiguration(uint32_t nowMs) {
+  if (!webConfigApplyPending ||
+      static_cast<int32_t>(nowMs - webConfigApplyAt) < 0) {
+    return;
+  }
+  webConfigApplyPending = false;
+  webConfigApplyAt = 0;
+  clockScreen.applyConfiguration();
+  clockDataService.applyConfig(clockConfig);
+  displayHostResync();
+}
 
 void onTouchSample(bool pressed, int16_t x, int16_t y, uint32_t nowMs) {
   GestureEvent event;
@@ -73,6 +150,7 @@ void setup() {
   Set_Backlight(clockConfig.dayBrightness);
 
   if (!displayHostBegin(onTouchSample)) halt("display host init failed");
+  displayHostSetBrightness(clockConfig.dayBrightness);
   if (!appConfigLoad(appConfig)) {
     appConfig = app_core::AppConfig::defaults();
     if (!appConfigSave(appConfig)) {
@@ -89,6 +167,10 @@ void setup() {
   if (!clockDataService.begin(clockConfig)) {
     Serial.println("Warning: clock data service initialization failed");
   }
+  web_host::begin(loadClockConfigForWeb, saveClockConfigFromWeb,
+                  updateClockWebStatus, loadSunTransitionTimes,
+                  requestDayNightRefresh, loadDayNightStatus,
+                  setDisplayForcedOff, displayIsForcedOff);
 
   Serial.printf("Ready: %u screens, active=%s, PSRAM free=%u\n",
                 static_cast<unsigned>(screenManager.moduleCount()),
@@ -114,16 +196,26 @@ void loop() {
 
   ClockValues clockValues;
   if (clockDataService.consumeValues(clockValues)) {
+    latestClockValues = clockValues;
     clockScreen.updateValues(clockValues);
   }
 
-  if (clockScreen.takeConfigSaveRequest()) {
-    if (!clockConfigSave(clockConfig)) {
+  uint8_t requestedWebMode = 0;
+  if (clockScreen.takeConfigSaveRequest(requestedWebMode)) {
+    if (clockConfigSave(clockConfig)) {
+      clockDataService.applyConfig(clockConfig);
+      if (!web_host::setMode(
+              static_cast<web_host::Mode>(requestedWebMode))) {
+        Serial.println("Warning: web mode could not be persisted");
+      }
+      displayHostResync();
+    } else {
       Serial.println("Warning: clock configuration could not be persisted");
     }
-    clockDataService.applyConfig(clockConfig);
-    displayHostResync();
   }
+
+  web_host::loop();
+  applyPendingWebConfiguration(millis());
 
   if (gesturePending) {
     const GestureEvent event = pendingGesture;

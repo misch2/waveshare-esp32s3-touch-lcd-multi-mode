@@ -14,6 +14,8 @@ lv_disp_drv_t displayDriver;
 TouchSampleCallback sampleCallback = nullptr;
 void* frameBuffer1 = nullptr;
 void* frameBuffer2 = nullptr;
+uint8_t currentBrightness = 35;
+bool forcedOff = false;
 
 void flushDisplay(lv_disp_drv_t* driver, const lv_area_t* area,
                   lv_color_t* pixels) {
@@ -86,3 +88,25 @@ bool displayHostBegin(TouchSampleCallback touchCallback) {
 void displayHostLoop() { lv_timer_handler(); }
 
 void displayHostResync() { LCD_Resync(); }
+
+void displayHostSetBrightness(uint8_t brightness) {
+  currentBrightness = constrain(brightness, 1, 100);
+  if (!forcedOff) Set_Backlight(currentBrightness);
+}
+
+void displayHostSetForcedOff(bool off) {
+  if (forcedOff == off) return;
+  forcedOff = off;
+  if (forcedOff) {
+    Set_Backlight(0);
+    LCD_Sleep();
+    return;
+  }
+
+  LCD_Wake();
+  lv_obj_invalidate(lv_scr_act());
+  displayHostResync();
+  Set_Backlight(currentBrightness);
+}
+
+bool displayHostForcedOff() { return forcedOff; }

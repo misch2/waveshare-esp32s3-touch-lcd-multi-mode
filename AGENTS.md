@@ -48,11 +48,17 @@ physical display. The following are verified:
 - persisted clock appearance/entity settings, Wi-Fi and SNTP have been verified
   on the physical device;
 - clock sensor/weather demo values have been removed; the extracted
-  `ClockDataService` now supplies Home Assistant or Open-Meteo snapshots. This
-  newest data-service slice is compiled but still needs a physical smoke test;
+  `ClockDataService` supplies Home Assistant or Open-Meteo snapshots, and real
+  Home Assistant values have been verified on the physical device;
+- the original on-device settings overlay opens, saves and affects the clock as
+  expected on the physical device;
+- the original clock web UI is now compiled as the sole server on port 80 and
+  advertised over mDNS. This newest web slice still needs a physical smoke
+  test;
 - `meteo.radar` is a visual/gesture demonstrator and does not use real
   MeteoPlaneRadar network data;
-- the common web configuration and production OTA flows are not connected yet.
+- the common landing page, Meteo web module and production OTA flows are not
+  connected yet.
 
 Do not extend the remaining demo radar into a parallel production
 implementation. Replace it by adapting the proven upstream functionality.
@@ -239,6 +245,19 @@ change.
 The final device has one host-owned `WebServer`. Neither module may construct a
 second global server on port 80.
 
+The current compatibility bridge in `firmware/lib/web_host` compiles the pinned
+clock `ConfigurationWeb.cpp` as the only port-80 server, while `main.cpp` owns
+its begin/loop lifecycle and supplies host callbacks. This deliberately keeps
+the proven clock HTML, form serialization, validation, password/session model,
+export/import and diagnostics intact. For this phase it retains the original
+clock routes at `/` and `/api/*`.
+
+This bridge is not the final multi-module route registry. Before mounting the
+Meteo web UI, refactor/upstream `ConfigurationWeb` so it accepts a host server
+and route prefix, then move the clock UI to `/clock/` and its API to a clock
+namespace. Do not register Meteo's colliding `/`, `/api/config` or `/api/status`
+routes alongside the current clock routes.
+
 Preserve the original user experience and validation logic by adapting route
 registration, not by reimplementing the pages from memory. A suitable target
 layout is:
@@ -349,20 +368,23 @@ Current host tests cover configuration normalization, the at-least-one-screen
 invariant, configured ordering, gesture classification/direction/debounce,
 disabled-screen skipping, screen navigation and automatic rotation. Extend
 these tests whenever the host contracts change. They also cover the reused
-day/night transition tolerance, offsets and unavailable-data behavior.
+day/night transition tolerance, offsets and unavailable-data behavior, plus
+the Home Assistant stored-token URL reuse policy used by the web flow.
 
 ## Near-term implementation order
 
 1. Upstream the current provenance-marked `ClockDataService` extraction into
    `waveshare-hodiny`, then replace the extracted source with a thin forwarding
    wrapper like the other upstream adapters.
-2. Replace the radar demonstrator with the real Meteo data/cache/rendering
+2. Refactor the clock web bridge to accept the host `WebServer` and clock route
+   prefix without rewriting its serialization, validation or UI behavior.
+3. Replace the radar demonstrator with the real Meteo data/cache/rendering
    adapter while retaining vertical range gestures.
-3. Add the remaining Meteo screens as separate stable-ID modules.
-4. Introduce the single host web server and mount the adapted original clock
-   and Meteo configuration pages under module prefixes.
-5. Add combined configuration export/import, diagnostics and host-owned OTA.
-6. Add regression tests and repeat the hardware smoke test after every phase.
+4. Add the remaining Meteo screens as separate stable-ID modules.
+5. Mount the adapted original Meteo configuration page under its module prefix
+   and add the common landing page.
+6. Add combined configuration export/import, diagnostics and host-owned OTA.
+7. Add regression tests and repeat the hardware smoke test after every phase.
 
 At every phase, prefer a thin wrapper over an imitation of behavior that is
 already implemented and tested upstream.
