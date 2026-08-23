@@ -1,0 +1,4 @@
+.pio/
+firmware/.pio/
+firmware/build/
+firmware/test/native/build/

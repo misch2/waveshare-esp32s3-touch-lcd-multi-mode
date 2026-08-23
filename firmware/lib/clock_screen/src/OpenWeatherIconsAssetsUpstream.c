@@ -1,0 +1,20 @@
+// The generated asset file uses C99 nested designators. Compile it as C,
+// then expose C++-linkage descriptor copies from the companion wrapper.
+#define meteocons_static_clear_day clock_asset_clear_day_c
+#define meteocons_static_clear_night clock_asset_clear_night_c
+#define meteocons_static_mostly_clear_day clock_asset_mostly_clear_day_c
+#define meteocons_static_mostly_clear_night clock_asset_mostly_clear_night_c
+#define meteocons_static_partly_cloudy_day clock_asset_partly_cloudy_day_c
+#define meteocons_static_partly_cloudy_night clock_asset_partly_cloudy_night_c
+#define meteocons_static_overcast_day clock_asset_overcast_day_c
+#define meteocons_static_overcast_night clock_asset_overcast_night_c
+#define meteocons_static_overcast clock_asset_overcast_c
+#define meteocons_static_drizzle clock_asset_drizzle_c
+#define meteocons_static_rain clock_asset_rain_c
+#define meteocons_static_sleet clock_asset_sleet_c
+#define meteocons_static_snow clock_asset_snow_c
+#define meteocons_static_mist clock_asset_mist_c
+#define meteocons_static_thunderstorms clock_asset_thunderstorms_c
+
+#include "../../../../waveshare-hodiny/WaveshareHodiny/OpenWeatherIcons.c"
+

@@ -1,0 +1,24 @@
+# Native app-core tests
+
+`native/test_runner.cpp` is a small dependency-free C++ runner for the host-side
+configuration, gesture, and screen-navigation contracts. It does not require
+Arduino, LVGL, Wi-Fi, or a connected display.
+
+From the repository root, build and run it with:
+
+```text
+g++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/lib/app_core/include ^
+  firmware/lib/app_core/src/AppConfig.cpp ^
+  firmware/lib/app_core/src/GestureRecognizer.cpp ^
+  firmware/lib/app_core/src/ScreenManager.cpp ^
+  firmware/test/native/test_runner.cpp ^
+  -o firmware/test/native/build/app_core_tests.exe
+firmware\test\native\build\app_core_tests.exe
+```
+
+On a POSIX shell, replace the continuation `^` characters with `\` and use
+`./firmware/test/native/build/app_core_tests` as the executable path.
+
+The test source intentionally uses only fixed-size DTOs and the public screen
+module interfaces, so it can remain useful while the hardware adapters and
+upstream submodules evolve.
