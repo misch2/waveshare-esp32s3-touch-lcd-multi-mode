@@ -11,6 +11,10 @@ helper results, callback assignment and invocation (including the import detail
 buffer, validation/apply phases and storage callbacks), and the `CombinedWebOptions` compatibility
 alias. Manual-only firmware upload is part of the route contract: its canonical
 path, 6 MiB bound, complete lifecycle callbacks and chunk buffers are tested.
+The upload filename is deliberately not the image identity; a release may use
+any filename ending in `.bin`. The hardware OTA service validates the
+ESP32-S3 application header and combined identity marker, so factory images and
+other non-combined applications are rejected by their contents.
 Automatic update discovery and installation remain intentionally absent from
 this contract.
 

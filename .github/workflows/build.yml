@@ -2,9 +2,18 @@ name: PlatformIO Build
 
 on:
   push:
-    branches: ["*"]
+    branches: ["**"]
   pull_request:
-    branches: ["*"]
+    branches: ["**"]
+
+# The self-hosted runner keeps a shared PlatformIO cache.  Serialize firmware
+# jobs so two builds cannot modify the same package/cache or .pio outputs.
+concurrency:
+  group: waveshare-firmware-build
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -13,11 +22,13 @@ jobs:
       PIP_ROOT_USER_ACTION: ignore
       VENV_PATH: /runner/data/venv/platformio
       PLATFORMIO_CORE_DIR: /runner/data/platformio
+      PLATFORMIO_CORE_VERSION: 6.1.19
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - uses: actions/setup-python@v5
         with:
@@ -25,14 +36,48 @@ jobs:
 
       - name: Set up Python virtual environment
         run: |
-          python3 -m venv $VENV_PATH
-          echo "$VENV_PATH/bin" >> $GITHUB_PATH
+          mkdir -p "$(dirname "$VENV_PATH")"
+          python3 -m venv "$VENV_PATH"
+          echo "$VENV_PATH/bin" >> "$GITHUB_PATH"
 
       - name: Install PlatformIO
-        run: pip install platformio
+        run: python -m pip install "platformio==${PLATFORMIO_CORE_VERSION}"
 
-      - name: Run host tests
-        run: python -m unittest discover -s test -p "test_*.py" -v
+      - name: Run native host tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p firmware/test/native/build
+          g++ -std=c++17 -Wall -Wextra -Werror \
+            -Ifirmware/lib/app_core/include \
+            -Iwaveshare-hodiny/WaveshareHodiny \
+            firmware/lib/app_core/src/AppConfig.cpp \
+            firmware/lib/app_core/src/GestureRecognizer.cpp \
+            firmware/lib/app_core/src/MeteoRadarConfig.cpp \
+            firmware/lib/app_core/src/ScreenManager.cpp \
+            waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp \
+            firmware/test/native/test_runner.cpp \
+            -o firmware/test/native/build/app_core_tests
+          firmware/test/native/build/app_core_tests
 
-      - name: Build
-        run: pio run
+      - name: Build firmware
+        run: pio run -d firmware -e waveshare-prototype
+
+      - name: Verify firmware images
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s firmware/.pio/build/waveshare-prototype/firmware.bin
+          test -s firmware/.pio/build/waveshare-prototype/firmware.factory.bin
+          test "$(stat -c%s firmware/.pio/build/waveshare-prototype/firmware.bin)" -le 6291456
+          grep -aFq "waveshare-multi-mode-screen:manual-ota:v1" \
+            firmware/.pio/build/waveshare-prototype/firmware.bin
+
+      - name: Upload firmware images
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            firmware/.pio/build/waveshare-prototype/firmware.bin
+            firmware/.pio/build/waveshare-prototype/firmware.factory.bin

@@ -21,6 +21,10 @@ struct Callbacks {
 // transaction and is safe to call once during setup before routes are exposed.
 void configure(const Callbacks& callbacks);
 
+// Confirm a newly booted OTA image once the application has reached setup().
+// This is a no-op for images that are not waiting for rollback verification.
+bool confirmRunningFirmware(char* message, std::size_t messageCapacity);
+
 // Start one upload transaction. `filename` must have a .bin suffix. A zero
 // content length means that the HTTP layer did not know the final length; the
 // partition limit is still enforced while receiving data.
@@ -30,7 +34,8 @@ bool begin(const char* filename,
            std::size_t messageCapacity);
 
 // Feed the upload in its original order. The first 288 bytes are buffered and
-// validated before esp_ota_begin() erases the target OTA slot.
+// validated before esp_ota_begin() erases the target OTA slot. end() also
+// verifies the combined-firmware identity marker before selecting the image.
 bool write(const std::uint8_t* data,
            std::size_t length,
            char* message,

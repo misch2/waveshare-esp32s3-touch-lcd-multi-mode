@@ -77,9 +77,11 @@ retains two application slots for safe manual firmware deployment, but the
 running firmware does not contact a release server or expose an automatic
 update action.
 
-Build from this directory with `pio run`. The first build may need to download
-LVGL 8.3.10. This is deliberately a hardware prototype, not yet a replacement
-for either upstream firmware.
+Build from this directory with `pio run`. `platformio.ini` pins PIOArduino
+55.03.311 (Arduino-ESP32 3.3.11 / ESP-IDF 5.5.5), so a clean CI runner uses the
+same framework as the physically verified build. The first build may need to
+download the platform and LVGL 8.3.10. This is deliberately a hardware
+prototype, not yet a replacement for either upstream firmware.
 
 Validated output is written to
 `.pio/build/waveshare-prototype/firmware.factory.bin`. The original display and
@@ -119,11 +121,14 @@ and all writes share one display-safe storage transaction.
 Firmware release discovery and installation from a remote download are
 intentionally absent. Manual deployment is available on the common page through `POST
 /api/firmware/upload`: choose the application image
-`.pio/build/waveshare-prototype/firmware.bin`, not `firmware.factory.bin`. The
-host validates the ESP32-S3 application header and combined project identity,
-stops the RGB driver and competing network fetches for the flash transaction,
-uses ESP-IDF OTA validation, and restarts only after returning a successful
-upload response.
+`.pio/build/waveshare-prototype/firmware.bin` (the standard build artifact may
+be renamed to any filename ending in `.bin`). The filename is not used as an
+identity check: the host validates the ESP32-S3 application header and combined
+identity marker, so `firmware.factory.bin` and other non-combined images are
+rejected by their contents. It then stops the RGB driver and competing network
+fetches for the flash transaction, uses ESP-IDF OTA validation, and restarts
+only after returning a successful upload response. The next boot confirms the
+new image to the rollback-enabled bootloader after setup starts successfully.
 
 The first production Meteo seam is connected independently of rendering.
 `MeteoRadarConfig` is a fixed-size, host-testable snapshot rather than another

@@ -62,7 +62,7 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
   <section class="tools">
     <div class="state">Ruční aktualizace</div>
     <h2>Nahrát nový firmware</h2>
-    <p>Vyberte aplikační obraz <strong>firmware.bin</strong>. Soubor <strong>firmware.factory.bin</strong> není určen pro tento upload. Aktualizace proběhne až po potvrzení a zařízení se poté restartuje.</p>
+    <p>Vyberte aplikační obraz s příponou <strong>.bin</strong>. Název souboru může být libovolný; obsah se ověří před instalací. Aktualizace proběhne až po potvrzení a zařízení se poté restartuje.</p>
     <input id="firmwareFile" type="file" accept=".bin,application/octet-stream">
     <button id="firmwareUploadButton" type="button" disabled>Nahrát firmware</button>
     <progress id="firmwareProgress" max="100" value="0" hidden></progress>
@@ -165,8 +165,9 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
 
       function validateFirmwareFile(file) {
         if (!file) return 'Nejprve vyberte soubor.';
-        if (firmwareFileName(file) !== 'firmware.bin') {
-          return 'Vyberte přesně soubor firmware.bin, nikoli firmware.factory.bin.';
+        const name = firmwareFileName(file).toLowerCase();
+        if (name.length <= 4 || !name.endsWith('.bin')) {
+          return 'Vyberte soubor firmwaru s příponou .bin.';
         }
         if (file.size > 6291456) return 'Firmware je příliš velký pro OTA slot.';
         return '';

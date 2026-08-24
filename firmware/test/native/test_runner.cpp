@@ -575,10 +575,14 @@ void testCombinedWebRoutesDefaultsAndCallbacks() {
 
   resetCombinedFirmwareTestState();
   char uploadMessage[32] = {};
-  CHECK(routes.firmwareUploadBegin("firmware.bin", uploadMessage,
+  // The upload route does not use the basename as an image identity.  A
+  // user-facing release name may identify the build, while the OTA service
+  // validates the application header and combined identity marker.
+  CHECK(routes.firmwareUploadBegin("waveshare-multi-mode-v1.2.3.bin",
+                                   uploadMessage,
                                    sizeof(uploadMessage)));
   CHECK_EQ(combinedFirmwareBeginCallCount, 1);
-  CHECK_STREQ(combinedFirmwareFilename, "firmware.bin");
+  CHECK_STREQ(combinedFirmwareFilename, "waveshare-multi-mode-v1.2.3.bin");
   CHECK_STREQ(uploadMessage, "upload started");
   CHECK_EQ(combinedFirmwareMessageCapacity, sizeof(uploadMessage));
 

@@ -63,7 +63,9 @@ physical display. The following are verified:
 - automatic firmware discovery and installation are intentionally disabled in
   the combined build. The web and on-device configuration must not expose or
   enable them. The common host page instead offers a local, manual-only upload
-  of the combined `firmware.bin`; physical verification is still required;
+  of the combined application image; any upload filename ending in `.bin` is
+  accepted and content validation identifies the image; physical verification
+  is still required;
 - `meteo.radar` now compiles the original `ScreenWeather`, CHMI and RainViewer
   data/rendering path into a host-owned RGB565 canvas which LVGL presents. CHMI
   data, colours, animation, memory headroom and vertical range gestures have
@@ -278,10 +280,12 @@ detail lookup is in progress; preserve
 this upstream behavior for the prototype and prefer a small upstream hook or
 data-service boundary if it needs improvement.
 
-The combined Arduino-ESP32 3.3.11 build pins Arduino_GFX 1.6.6, because the
-upstream standalone pin 1.4.9 predates the framework's changed SPI API. This is
-a build-tool compatibility difference, not a fork of the renderer API. PNGdec
-stays at 1.0.1; its draw callbacks must retain the declared `void` signature.
+The combined build pins PIOArduino 55.03.311 (Arduino-ESP32 3.3.11 / ESP-IDF
+5.5.5) by its explicit platform release URL and pins Arduino_GFX 1.6.6, because
+the upstream standalone pin 1.4.9 predates the framework's changed SPI API.
+This is a build-tool compatibility difference, not a fork of the renderer API.
+PNGdec stays at 1.0.1; its draw callbacks must retain the declared `void`
+signature.
 CHMI and RainViewer must keep sharing the header-provided decoder: the two
 sources are mutually exclusive, and two PNG objects consume about 96 kB of
 internal RAM instead of about 48 kB, materially reducing TLS headroom.
@@ -405,15 +409,26 @@ all namespace writes in one display-storage transaction. Automatic update
 policy, discovery state and release metadata are not part of this format or
 these diagnostics.
 
-Manual OTA accepts only the combined PlatformIO application image named
-`firmware.bin`, never `firmware.factory.bin`. Before writing, the host buffers
-and verifies the ESP image header, ESP32-S3 chip ID, application descriptor and
-the running combined project's name. The root-owned service then uses
+Manual OTA accepts only a combined PlatformIO application image whose upload
+filename ends in `.bin`; the filename is not used as the image identity, so a
+release may use a descriptive name. `firmware.factory.bin` and other
+non-combined images are rejected by their contents, not by a basename rule.
+Before writing, the host buffers and verifies the ESP image header, ESP32-S3
+chip ID, application descriptor and an integration-owned identity marker
+embedded in the combined image. Do not replace the marker with
+`esp_app_desc.project_name`: the bundled Arduino build uses the generic
+`arduino-lib-builder` name for unrelated applications. The root-owned service
+then uses
 `esp_ota_begin/write/end` so ESP-IDF validates the complete image before the
 inactive 6 MiB app partition becomes bootable. It holds `FetchGate` and deletes
 the RGB driver for the complete flash transaction; failure or abort restores
 the display and releases the gate, while success sends the HTTP result first
-and restarts without recreating the old display pipeline.
+and restarts without recreating the old display pipeline. Rollback support is
+enabled in the bundled bootloader, so early setup must confirm a newly booted
+`ESP_OTA_IMG_PENDING_VERIFY` image with
+`esp_ota_mark_app_valid_cancel_rollback()`. A confirmation failure is fatal:
+continuing would leave the image pending, make another OTA transaction invalid
+and allow a later reboot to roll back unexpectedly.
 
 Every runtime web handler that writes the `clockcfg` partition must use the
 host-provided storage begin/end callbacks. The clock configuration and web mode
@@ -573,7 +588,8 @@ and queued command/storage callback wiring.
    the interaction path have already passed.
 3. Physically verify the corrected common diagnostics response and the new
    `/clock/` link back to the common landing page, then exercise both a rejected
-   wrong image and a successful manual `firmware.bin` upload. Combined
+   wrong/non-combined image under an arbitrary `.bin` name and a successful
+   manual upload. Combined
    export/import and its display-safe storage lifecycle have already passed a
    physical round-trip test; its contract leaves Wi-Fi, HA token and web
    credentials untouched.

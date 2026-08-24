@@ -773,12 +773,24 @@ void onTouchSample(bool pressed, int16_t x, int16_t y, uint32_t nowMs) {
   Set_Backlight(10);
   while (true) delay(1000);
 }
+
+[[noreturn]] void haltBeforeDisplay(const char* reason) {
+  Serial.printf("FATAL: %s\n", reason);
+  while (true) delay(1000);
+}
 }  // namespace
 
 void setup() {
   Serial.begin(115200);
   delay(300);
   Serial.println("Multi-mode screen prototype starting");
+
+  char firmwareConfirmationMessage[96] = {};
+  if (!manual_firmware_update::confirmRunningFirmware(
+          firmwareConfirmationMessage,
+          sizeof(firmwareConfirmationMessage))) {
+    haltBeforeDisplay(firmwareConfirmationMessage);
+  }
 
   // ClockConfig owns its own partition and performs schema migrations. It
   // must be ready before display construction so the dashboard never starts

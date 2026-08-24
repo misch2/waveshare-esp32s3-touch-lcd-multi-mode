@@ -82,6 +82,16 @@ const char* uploadBasename(const String& filename) {
   return slash == nullptr ? value : slash + 1;
 }
 
+bool hasBinSuffix(const char* filename) {
+  if (filename == nullptr) return false;
+  const std::size_t length = std::strlen(filename);
+  if (length <= 4) return false;
+  const char* suffix = filename + length - 4;
+  return suffix[0] == '.' && (suffix[1] == 'b' || suffix[1] == 'B') &&
+         (suffix[2] == 'i' || suffix[2] == 'I') &&
+         (suffix[3] == 'n' || suffix[3] == 'N');
+}
+
 bool ensureClockWebNamespaces() {
   // The combined host starts its web layer before RGB scanout, so this is the
   // safe place to create optional namespaces without interrupting the PSRAM
@@ -262,19 +272,18 @@ void handleHostFirmwareUploadChunk() {
       return;
     }
 
-    // The combined host deliberately accepts the PlatformIO application
-    // image only.  In particular, a factory image is not a valid OTA slot
-    // payload and must not be mistaken for firmware.bin.
-    if (std::strcmp(uploadBasename(upload.filename), "firmware.bin") != 0) {
-      setFirmwareUploadError(
-          "Vyberte soubor firmware.bin (nikoli firmware.factory.bin).");
+    // The name is only a transport hint.  The OTA service validates the
+    // image contents after receiving the data, so a factory image is rejected
+    // by the OTA validator rather than by its filename.
+    const char* filename = uploadBasename(upload.filename);
+    if (!hasBinSuffix(filename)) {
+      setFirmwareUploadError("Vyberte soubor firmwaru s příponou .bin.");
       return;
     }
 
     char detail[kFirmwareMessageSize];
     detail[0] = '\0';
-    if (!combinedRoutes.firmwareUploadBegin(
-            "firmware.bin", detail, sizeof(detail))) {
+    if (!combinedRoutes.firmwareUploadBegin(filename, detail, sizeof(detail))) {
       detail[sizeof(detail) - 1] = '\0';
       setFirmwareUploadError(
           detail[0] != '\0' ? detail : "Firmware se nepodařilo připravit.",

@@ -8,6 +8,7 @@
 #include <esp_err.h>
 #include <esp_image_format.h>
 #include <esp_ota_ops.h>
+#include <esp_partition.h>
 
 #include "NetworkFetchGate.h"
 
@@ -18,6 +19,14 @@ constexpr std::size_t kImageHeaderBytes =
     sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) +
     sizeof(esp_app_desc_t);
 constexpr std::size_t kMessageFallbackCapacity = 1;
+constexpr std::size_t kIdentityReadBytes = 1024;
+
+// The generic Arduino app descriptor uses "arduino-lib-builder" for unrelated
+// projects as well, so project_name cannot identify this combined firmware.
+// Keeping this marker in the application image gives the upload service a
+// stable, host-owned identity to verify before changing the boot partition.
+extern "C" __attribute__((used)) const char kCombinedFirmwareIdentity[] =
+    "waveshare-multi-mode-screen:manual-ota:v1";
 
 enum class State : std::uint8_t { Idle, Receiving, RestartPending };
 
@@ -45,7 +54,7 @@ void setMessage(char* message, std::size_t capacity, const char* text) {
 bool hasBinSuffix(const char* filename) {
   if (filename == nullptr) return false;
   const std::size_t length = std::strlen(filename);
-  if (length < 4) return false;
+  if (length <= 4) return false;
   const char* suffix = filename + length - 4;
   return (suffix[0] == '.') && (suffix[1] == 'b' || suffix[1] == 'B') &&
          (suffix[2] == 'i' || suffix[2] == 'I') &&
@@ -126,29 +135,48 @@ bool validateHeader(char* message, std::size_t messageCapacity) {
     return false;
   }
 
-  const esp_app_desc_t* runningDescription = esp_app_get_description();
-  if (runningDescription == nullptr ||
-      runningDescription->magic_word != ESP_APP_DESC_MAGIC_WORD) {
+  return true;
+}
+
+bool uploadedImageHasCombinedIdentity(char* message,
+                                      std::size_t messageCapacity) {
+  if (targetPartition == nullptr || receivedLength == 0) {
     setMessage(message, messageCapacity,
-               "Nelze ověřit běžící firmware.");
+               "Nelze ověřit identitu firmwaru.");
     return false;
   }
 
-  char uploadedProject[sizeof(appDescription.project_name) + 1] = {};
-  char runningProject[sizeof(runningDescription->project_name) + 1] = {};
-  std::memcpy(uploadedProject, appDescription.project_name,
-              sizeof(appDescription.project_name));
-  std::memcpy(runningProject, runningDescription->project_name,
-              sizeof(runningDescription->project_name));
-  uploadedProject[sizeof(appDescription.project_name)] = '\0';
-  runningProject[sizeof(runningDescription->project_name)] = '\0';
-  if (uploadedProject[0] == '\0' || runningProject[0] == '\0' ||
-      std::strcmp(uploadedProject, runningProject) != 0) {
-    setMessage(message, messageCapacity,
-               "Firmware patří k jiné aplikaci.");
-    return false;
+  constexpr std::size_t markerLength = sizeof(kCombinedFirmwareIdentity) - 1;
+  std::uint8_t buffer[kIdentityReadBytes + markerLength - 1] = {};
+  std::size_t carryLength = 0;
+  std::size_t offset = 0;
+
+  while (offset < receivedLength) {
+    const std::size_t readLength =
+        std::min(kIdentityReadBytes, receivedLength - offset);
+    if (esp_partition_read(targetPartition, offset, buffer + carryLength,
+                           readLength) != ESP_OK) {
+      setMessage(message, messageCapacity,
+                 "Čtení nahraného firmwaru selhalo.");
+      return false;
+    }
+
+    const std::size_t available = carryLength + readLength;
+    const auto* match = std::search(
+        buffer, buffer + available,
+        reinterpret_cast<const std::uint8_t*>(kCombinedFirmwareIdentity),
+        reinterpret_cast<const std::uint8_t*>(kCombinedFirmwareIdentity) +
+            markerLength);
+    if (match != buffer + available) return true;
+
+    carryLength = std::min(markerLength - 1, available);
+    std::memmove(buffer, buffer + available - carryLength, carryLength);
+    offset += readLength;
   }
-  return true;
+
+  setMessage(message, messageCapacity,
+             "Firmware patří k jiné aplikaci.");
+  return false;
 }
 
 bool beginOta(char* message, std::size_t messageCapacity) {
@@ -177,6 +205,32 @@ bool beginOta(char* message, std::size_t messageCapacity) {
 }  // namespace
 
 void configure(const Callbacks& requestedCallbacks) { callbacks = requestedCallbacks; }
+
+bool confirmRunningFirmware(char* message, std::size_t messageCapacity) {
+  const esp_partition_t* runningPartition = esp_ota_get_running_partition();
+  if (runningPartition == nullptr) {
+    setMessage(message, messageCapacity,
+               "Nelze zjistit běžící firmware.");
+    return false;
+  }
+
+  esp_ota_img_states_t imageState = ESP_OTA_IMG_UNDEFINED;
+  const esp_err_t stateResult =
+      esp_ota_get_state_partition(runningPartition, &imageState);
+  if (stateResult == ESP_ERR_NOT_FOUND) return true;
+  if (stateResult != ESP_OK) {
+    setMessage(message, messageCapacity,
+               "Nelze zjistit stav běžícího firmwaru.");
+    return false;
+  }
+  if (imageState != ESP_OTA_IMG_PENDING_VERIFY) return true;
+  if (esp_ota_mark_app_valid_cancel_rollback() != ESP_OK) {
+    setMessage(message, messageCapacity,
+               "Nový firmware nelze potvrdit jako platný.");
+    return false;
+  }
+  return true;
+}
 
 bool begin(const char* filename,
            std::size_t contentLength,
@@ -298,6 +352,16 @@ bool end(char* message, std::size_t messageCapacity) {
   if (endResult != ESP_OK) {
     failTransaction(message, messageCapacity,
                     "Ověření nového firmwaru selhalo.");
+    return false;
+  }
+  if (!uploadedImageHasCombinedIdentity(message, messageCapacity)) {
+    char detail[96] = {};
+    if (message != nullptr && messageCapacity > 0) {
+      std::strncpy(detail, message, sizeof(detail) - 1);
+    }
+    failTransaction(message, messageCapacity,
+                    detail[0] != '\0' ? detail
+                                       : "Firmware patří k jiné aplikaci.");
     return false;
   }
   if (esp_ota_set_boot_partition(targetPartition) != ESP_OK) {
