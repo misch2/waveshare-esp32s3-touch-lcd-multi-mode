@@ -15,24 +15,29 @@ using HomeAssistantRefreshCallback = ::HomeAssistantRefreshCallback;
 using DisplayPowerCallback = ::DisplayPowerCallback;
 using DisplayPowerStatusCallback = ::DisplayPowerStatusCallback;
 using DayNightStatusCallback = ::DayNightStatusCallback;
+using StorageBeginCallback = ::ConfigurationStorageBeginCallback;
+using StorageEndCallback = ::ConfigurationStorageEndCallback;
 using Mode = ::ConfigurationWebMode;
 
 constexpr Mode MODE_TIMED = ::CONFIGURATION_WEB_TIMED;
 constexpr Mode MODE_ALWAYS = ::CONFIGURATION_WEB_ALWAYS;
 constexpr Mode MODE_DISABLED = ::CONFIGURATION_WEB_DISABLED;
 
-// The host owns when this lifecycle is called. These functions only delegate
-// to the upstream implementation and do not create a second WebServer.
-void begin(ClockConfigLoadCallback loadCallback,
+// The integration host owns the sole HTTP server and mounts the upstream
+// clock page below /clock/ with its API below /api/modules/clock.
+bool begin(ClockConfigLoadCallback loadCallback,
            ClockConfigSaveCallback saveCallback,
            ConfigurationWebStatusCallback statusCallback,
            SunTransitionTimesCallback sunTimesCallback,
            HomeAssistantRefreshCallback refreshCallback,
            DayNightStatusCallback dayNightStatusCallback,
            DisplayPowerCallback displayPowerCallback,
-           DisplayPowerStatusCallback displayPowerStatusCallback);
+           DisplayPowerStatusCallback displayPowerStatusCallback,
+           StorageBeginCallback storageBeginCallback,
+           StorageEndCallback storageEndCallback);
 void loop();
 void ensureActive();
+bool active();
 Mode mode();
 bool setMode(Mode mode);
 

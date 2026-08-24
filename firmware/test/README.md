@@ -1,8 +1,8 @@
 # Native app-core tests
 
 `native/test_runner.cpp` is a small dependency-free C++ runner for the host-side
-configuration, gesture, and screen-navigation contracts. It does not require
-Arduino, LVGL, Wi-Fi, or a connected display.
+configuration, web-route DTO, gesture, and screen-navigation contracts. It does
+not require Arduino, LVGL, Wi-Fi, or a connected display.
 
 From the repository root, build and run it with:
 

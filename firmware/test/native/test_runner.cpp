@@ -1,4 +1,5 @@
 #include "AppConfig.h"
+#include "ConfigurationWebRoutes.h"
 #include "DayNightLogic.h"
 #include "HomeAssistantConnectionPolicy.h"
 #include "GestureRecognizer.h"
@@ -244,6 +245,46 @@ void testHomeAssistantStoredTokenReusePolicy() {
   CHECK(!homeAssistantMayReuseStoredToken(nullptr, storedUrl));
   CHECK(!homeAssistantMayReuseStoredToken(storedUrl, nullptr));
   CHECK(!homeAssistantMayReuseStoredToken(nullptr, nullptr));
+}
+
+bool configurationStorageBeginForTest() { return true; }
+bool configurationStorageEndForTest() { return false; }
+
+void testConfigurationWebRoutesDefaultsAndCallbacks() {
+  const ConfigurationWebRoutes defaults;
+  CHECK(defaults.webServer == nullptr);
+  CHECK_STREQ(defaults.pagePath, "/clock/");
+  CHECK_STREQ(defaults.apiPrefix, "/api/modules/clock");
+  CHECK_STREQ(defaults.pagePath, CONFIGURATION_WEB_DEFAULT_PAGE_PATH);
+  CHECK_STREQ(defaults.apiPrefix, CONFIGURATION_WEB_DEFAULT_API_PREFIX);
+  CHECK(defaults.registerLegacyAliases);
+  CHECK(defaults.manageServerLifecycle);
+  CHECK(defaults.storageBegin == nullptr);
+  CHECK(defaults.storageEnd == nullptr);
+
+  ConfigurationWebRoutes routes;
+  routes.pagePath = "/custom/clock/";
+  routes.apiPrefix = "/api/custom-clock";
+  routes.registerLegacyAliases = false;
+  routes.manageServerLifecycle = false;
+  routes.storageBegin = configurationStorageBeginForTest;
+  routes.storageEnd = configurationStorageEndForTest;
+
+  CHECK_STREQ(routes.pagePath, "/custom/clock/");
+  CHECK_STREQ(routes.apiPrefix, "/api/custom-clock");
+  CHECK(!routes.registerLegacyAliases);
+  CHECK(!routes.manageServerLifecycle);
+  CHECK(routes.storageBegin != nullptr);
+  CHECK(routes.storageEnd != nullptr);
+  CHECK(routes.storageBegin());
+  CHECK(!routes.storageEnd());
+
+  // The compatibility alias must expose the same DTO and callback fields.
+  ConfigurationWebOptions options;
+  options.storageBegin = routes.storageBegin;
+  options.storageEnd = routes.storageEnd;
+  CHECK(options.storageBegin == configurationStorageBeginForTest);
+  CHECK(options.storageEnd == configurationStorageEndForTest);
 }
 
 GestureEvent recognize(GestureRecognizer& recognizer, bool& recognized,
@@ -591,6 +632,7 @@ int main() {
   testDayNightTransitionTimestampToleranceAndFallback();
   testDayNightOffsetsAndTransitions();
   testHomeAssistantStoredTokenReusePolicy();
+  testConfigurationWebRoutesDefaultsAndCallbacks();
   testGestureDirectionsAndDebounce();
   testGestureTapAndLongPress();
   testScreenManagerNavigationAndDispatch();

@@ -40,7 +40,30 @@ bool gesturePending = false;
 bool clockTimeWasSynchronized = false;
 bool webConfigApplyPending = false;
 uint32_t webConfigApplyAt = 0;
-bool webStorageWriteSuspended = false;
+uint8_t configurationStorageDepth = 0;
+
+[[noreturn]] void halt(const char* reason);
+
+bool beginConfigurationStorageWrite() {
+  if (configurationStorageDepth > 0) {
+    if (configurationStorageDepth == UINT8_MAX) return false;
+    ++configurationStorageDepth;
+    return true;
+  }
+  if (!displayHostBeginStorageWrite()) return false;
+  configurationStorageDepth = 1;
+  return true;
+}
+
+bool endConfigurationStorageWrite() {
+  if (configurationStorageDepth == 0) return false;
+  --configurationStorageDepth;
+  if (configurationStorageDepth > 0) return true;
+  if (!displayHostEndStorageWrite()) {
+    halt("display driver recreation failed after configuration save");
+  }
+  return true;
+}
 
 void loadClockConfigForWeb(ClockConfig& config) { config = clockConfig; }
 
@@ -57,8 +80,6 @@ bool saveClockConfigFromWeb(const ClockConfig& config,
       candidate.homeAssistantToken[0] = '\0';
     }
   }
-  if (!displayHostBeginStorageWrite()) return false;
-  webStorageWriteSuspended = true;
   if (!clockConfigSave(candidate)) return false;
 
   clockConfig = candidate;
@@ -158,10 +179,13 @@ void setup() {
   if (!network_host::begin()) {
     Serial.println("Warning: network host initialization failed");
   }
-  web_host::begin(loadClockConfigForWeb, saveClockConfigFromWeb,
-                  updateClockWebStatus, loadSunTransitionTimes,
-                  requestDayNightRefresh, loadDayNightStatus,
-                  setDisplayForcedOff, displayIsForcedOff);
+  if (!web_host::begin(
+          loadClockConfigForWeb, saveClockConfigFromWeb, updateClockWebStatus,
+          loadSunTransitionTimes, requestDayNightRefresh, loadDayNightStatus,
+          setDisplayForcedOff, displayIsForcedOff,
+          beginConfigurationStorageWrite, endConfigurationStorageWrite)) {
+    Serial.println("Warning: web host initialization failed");
+  }
 
   I2C_Init();
   Set_EXIOS(0x0C);
@@ -175,6 +199,7 @@ void setup() {
     halt("screen registration failed");
   }
   if (!screenManager.begin()) halt("screen init failed");
+  updateClockWebStatus(web_host::active());
   if (!clockDataService.begin(clockConfig)) {
     Serial.println("Warning: clock data service initialization failed");
   }
@@ -209,7 +234,7 @@ void loop() {
 
   uint8_t requestedWebMode = 0;
   if (clockScreen.takeConfigSaveRequest(requestedWebMode)) {
-    const bool displaySuspended = displayHostBeginStorageWrite();
+    const bool displaySuspended = beginConfigurationStorageWrite();
     if (displaySuspended && clockConfigSave(clockConfig)) {
       clockDataService.applyConfig(clockConfig);
       if (!web_host::setMode(
@@ -220,21 +245,12 @@ void loop() {
     } else {
       Serial.println("Warning: clock configuration could not be persisted");
     }
-    if (displaySuspended && !displayHostEndStorageWrite()) {
-      halt("display driver recreation failed after configuration save");
+    if (displaySuspended && !endConfigurationStorageWrite()) {
+      Serial.println("Warning: unbalanced configuration storage transaction");
     }
   }
 
   web_host::loop();
-  // The upstream web handler persists its web mode after our ClockConfig save
-  // callback returns. Keep scanout stopped until the whole request completes so
-  // both NVS writes are covered by one clean stop/start sequence.
-  if (webStorageWriteSuspended) {
-    webStorageWriteSuspended = false;
-    if (!displayHostEndStorageWrite()) {
-      halt("display driver recreation failed after web save");
-    }
-  }
   applyPendingWebConfiguration(millis());
 
   if (gesturePending) {

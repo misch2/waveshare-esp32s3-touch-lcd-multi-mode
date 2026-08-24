@@ -52,13 +52,17 @@ physical display. The following are verified:
   Home Assistant values have been verified on the physical device;
 - the original on-device settings overlay opens, saves and affects the clock as
   expected on the physical device;
-- the original clock web UI is now compiled as the sole server on port 80 and
-  advertised over mDNS. HTTP access, configuration loading/saving and the
-  resulting display changes have been verified on the physical device;
+- the original clock web UI is compiled behind the sole host-owned server on
+  port 80. The host landing page is mounted at `/`, the clock page at
+  `/clock/`, and its API at `/api/modules/clock/*`;
+- the previous compatibility bridge at `/` and `/api/*`, including HTTP access,
+  configuration loading/saving and resulting display changes, was verified on
+  the physical device. The new prefixed host routes still require a physical
+  smoke test;
 - `meteo.radar` is a visual/gesture demonstrator and does not use real
   MeteoPlaneRadar network data;
-- the common landing page, Meteo web module and production OTA flows are not
-  connected yet.
+- the common landing page and clock module are connected; the Meteo web module
+  and production OTA flows are not connected yet.
 
 Do not extend the remaining demo radar into a parallel production
 implementation. Replace it by adapting the proven upstream functionality.
@@ -245,18 +249,19 @@ change.
 The final device has one host-owned `WebServer`. Neither module may construct a
 second global server on port 80.
 
-The current compatibility bridge in `firmware/lib/web_host` compiles the pinned
-clock `ConfigurationWeb.cpp` as the only port-80 server, while `main.cpp` owns
-its begin/loop lifecycle and supplies host callbacks. This deliberately keeps
+`firmware/lib/web_host` owns the only active port-80 `WebServer`, its
+`begin()`/`handleClient()` lifecycle and the common landing page. The pinned
+clock `ConfigurationWeb.cpp` accepts the caller-owned server through
+`ConfigurationWebRoutes` and only registers its page/API handlers. This keeps
 the proven clock HTML, form serialization, validation, password/session model,
-export/import and diagnostics intact. For this phase it retains the original
-clock routes at `/` and `/api/*`.
+export/import and diagnostics intact while removing global route ownership from
+the module.
 
-This bridge is not the final multi-module route registry. Before mounting the
-Meteo web UI, refactor/upstream `ConfigurationWeb` so it accepts a host server
-and route prefix, then move the clock UI to `/clock/` and its API to a clock
-namespace. Do not register Meteo's colliding `/`, `/api/config` or `/api/status`
-routes alongside the current clock routes.
+The combined host uses `/clock/` and `/api/modules/clock/*` and disables legacy
+aliases. The standalone clock entry point keeps `/` and `/api/*` aliases in
+addition to the canonical routes, so existing bookmarks and control URLs remain
+usable. Do not register Meteo's colliding `/`, `/api/config` or `/api/status`
+routes alongside the host routes.
 
 Preserve the original user experience and validation logic by adapting route
 registration, not by reimplementing the pages from memory. A suitable target
@@ -285,6 +290,13 @@ invalid.
 Module web handlers may validate and enqueue changes, but rendering and screen
 switches must be applied by the main loop. Keep export/import versioned and omit
 Wi-Fi passwords, Home Assistant tokens, admin passwords and control secrets.
+
+Every runtime web handler that writes the `clockcfg` partition must use the
+host-provided storage begin/end callbacks. The clock configuration and web mode
+are persisted inside one nested transaction; password changes use the same
+guard. This is required so `DisplayHost` deletes the RGB driver before NVS
+temporarily disables the PSRAM cache and recreates it only after all related
+writes finish.
 
 ## Hardware integration constraints
 
@@ -331,8 +343,10 @@ or callbacks. The storage-write guard must therefore call
 addresses, register the VSYNC callback, reset/init the panel and reinitialize
 the existing LVGL draw-buffer descriptor. Never let LVGL run while its old
 framebuffer pointers refer to the deleted driver. A recreation failure is fatal
-because continuing would dereference freed buffers. This lifecycle has not yet
-passed physical repeated-Save testing.
+because continuing would dereference freed buffers. This lifecycle passed
+repeated physical Save testing before the web route refactor. Re-test it through
+the new `/clock/` route because password and web-mode writes now use the same
+transaction callback.
 
 A no-bounce experiment using direct double-framebuffer PSRAM/EDMA scanout at
 8 MHz was physically rejected: the image jittered horizontally on every LVGL
@@ -425,13 +439,15 @@ the Home Assistant stored-token URL reuse policy used by the web flow.
 1. Upstream the current provenance-marked `ClockDataService` extraction into
    `waveshare-hodiny`, then replace the extracted source with a thin forwarding
    wrapper like the other upstream adapters.
-2. Refactor the clock web bridge to accept the host `WebServer` and clock route
-   prefix without rewriting its serialization, validation or UI behavior.
+2. Physically verify the new host landing page, `/clock/` routes,
+   authentication, configuration Save and control endpoints; then commit the
+   small upstream `ConfigurationWeb` route seam and advance the submodule
+   pointer.
 3. Replace the radar demonstrator with the real Meteo data/cache/rendering
    adapter while retaining vertical range gestures.
 4. Add the remaining Meteo screens as separate stable-ID modules.
 5. Mount the adapted original Meteo configuration page under its module prefix
-   and add the common landing page.
+   and connect it from the existing common landing page.
 6. Add combined configuration export/import, diagnostics and host-owned OTA.
 7. Add regression tests and repeat the hardware smoke test after every phase.
 

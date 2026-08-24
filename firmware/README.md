@@ -21,8 +21,10 @@ Implemented screens:
   background `ClockDataService` preserves the original Home Assistant and
   Open-Meteo clients, retry intervals, parsing and day/night behavior while the
   main UI loop alone applies the latest `ClockValues` snapshot to LVGL. The
-  original clock web configuration, authentication and diagnostics are exposed
-  by the sole HTTP server at `http://waveshare-hodiny.local/`.
+  host-owned HTTP server exposes a common landing page at
+  `http://waveshare-hodiny.local/`, while the original clock configuration,
+  authentication and diagnostics are mounted at
+  `http://waveshare-hodiny.local/clock/` with namespaced API routes.
 - `meteo.radar` is a lightweight LVGL radar demonstrator. It proves vertical
   range gestures and host navigation, but does not yet download or render the
   MeteoPlaneRadar data.
@@ -44,10 +46,11 @@ tested. Real Home Assistant values and the on-device settings overlay were also
 verified. The HTTP configuration server, persistence and resulting display
 updates were verified on the physical device as well.
 
-The current web compatibility bridge intentionally retains the clock project's
-original `/` and `/api/*` routes. Before adding the Meteo web UI it must be
-refactored to accept host-owned `/clock/` and clock API prefixes; do not mount
-the colliding Meteo routes unchanged.
+The clock web module now accepts the host-owned `WebServer`. The combined
+firmware mounts it at `/clock/` and `/api/modules/clock/*`; the standalone clock
+firmware retains its original `/` and `/api/*` aliases. The original HTML,
+serialization, validation, password/session handling and export/import logic
+remain upstream. Do not mount the colliding Meteo routes unchanged.
 
 The integration display host selects an 8 MHz RGB pixel clock and waits for
 VSYNC before LVGL may reuse a flushed framebuffer. This is intended to prevent
@@ -59,8 +62,9 @@ by several rows until another restart. A reset/init of the existing driver also
 failed because it did not stop GDMA or discard the driver's bounce state. The
 current Save transaction therefore deletes the complete RGB driver before NVS,
 then creates a new driver, framebuffers, DMA descriptors and bounce buffers and
-rebinds LVGL afterwards. This full lifecycle still needs physical testing.
-Watch the serial log for `LCD VSYNC timeout during ...` warnings.
+rebinds LVGL afterwards. This full lifecycle passed repeated physical Save
+testing before the web route refactor. Re-test Save and password changes through
+`/clock/`; watch the serial log for `LCD VSYNC timeout during ...` warnings.
 
 The root cause is flash/cache interaction, not the stored values themselves.
 ESP-IDF explicitly states that a PSRAM framebuffer with bounce buffers cannot
