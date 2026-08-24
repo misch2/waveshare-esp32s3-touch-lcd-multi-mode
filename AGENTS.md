@@ -72,6 +72,10 @@ physical display. The following are verified:
   Its Open-Meteo forecast and air-quality requests are serialized with other
   module TLS work and run only while the screen is active; physical verification
   is still required;
+- Home Assistant refreshes reuse one `HTTPClient` and TLS connection for the
+  complete entity batch. A transport failure aborts the batch, preserves the
+  last complete snapshot and uses a wrap-safe 5--60 second exponential
+  backoff instead of multiplying TLS handshakes across every entity;
 - the common landing page and clock module are connected; the Meteo web module
   is not connected yet.
 
@@ -111,6 +115,13 @@ All module HTTP clients share `network_host::FetchLease`. A screen/service must
 hold the lease only for its active request batch and release it before sleeping
 or waiting for the next refresh. This prevents concurrent Home Assistant and
 Meteo TLS handshakes from exhausting internal RAM.
+
+Within one Home Assistant refresh, keep one `HTTPClient` alive across all
+entity URLs. Arduino-ESP32 3.3.11 stops the underlying client from the
+`HTTPClient` destructor, so constructing a new `HTTPClient` per entity defeats
+`setReuse(true)` and causes another TLS handshake. Use `setURL()` on the shared
+object, abort the remaining batch on a transport result `<= 0`, and retain the
+tested `HomeAssistantBatchPolicy` backoff.
 
 ## Screen module contract
 

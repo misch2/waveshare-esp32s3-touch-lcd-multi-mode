@@ -1,6 +1,7 @@
 #include "AppConfig.h"
 #include "ConfigurationWebRoutes.h"
 #include "DayNightLogic.h"
+#include "HomeAssistantBatchPolicy.h"
 #include "HomeAssistantConnectionPolicy.h"
 #include "GestureRecognizer.h"
 #include "MeteoRadarConfig.h"
@@ -250,6 +251,72 @@ void testHomeAssistantStoredTokenReusePolicy() {
   CHECK(!homeAssistantMayReuseStoredToken(nullptr, storedUrl));
   CHECK(!homeAssistantMayReuseStoredToken(storedUrl, nullptr));
   CHECK(!homeAssistantMayReuseStoredToken(nullptr, nullptr));
+}
+
+void testHomeAssistantBatchPolicy() {
+  using app_core::HomeAssistantBatchPolicy;
+  using app_core::HomeAssistantBatchResult;
+
+  CHECK_EQ(static_cast<int>(HomeAssistantBatchPolicy::classifyStatus(200)),
+           static_cast<int>(HomeAssistantBatchResult::Success));
+  CHECK_EQ(static_cast<int>(HomeAssistantBatchPolicy::classifyStatus(401)),
+           static_cast<int>(HomeAssistantBatchResult::HttpApplicationError));
+  CHECK_EQ(static_cast<int>(HomeAssistantBatchPolicy::classifyStatus(500)),
+           static_cast<int>(HomeAssistantBatchResult::HttpApplicationError));
+  CHECK_EQ(static_cast<int>(HomeAssistantBatchPolicy::classifyStatus(0)),
+           static_cast<int>(HomeAssistantBatchResult::TransportFailure));
+  CHECK_EQ(static_cast<int>(HomeAssistantBatchPolicy::classifyStatus(-24960)),
+           static_cast<int>(HomeAssistantBatchResult::TransportFailure));
+
+  const auto applicationError = HomeAssistantBatchPolicy::decide(401);
+  CHECK(applicationError.continueBatch);
+  CHECK(!applicationError.retryRequest);
+
+  const auto transientServerError = HomeAssistantBatchPolicy::decide(500);
+  CHECK(transientServerError.continueBatch);
+  CHECK(transientServerError.retryRequest);
+  CHECK(HomeAssistantBatchPolicy::decide(408).retryRequest);
+  CHECK(HomeAssistantBatchPolicy::decide(429).retryRequest);
+
+  const auto transportFailure = HomeAssistantBatchPolicy::decide(-24960);
+  CHECK(!transportFailure.continueBatch);
+  CHECK(!transportFailure.retryRequest);
+
+  HomeAssistantBatchPolicy policy(1000, 4000);
+  CHECK(policy.canStart(0));
+  policy.recordBatchResult(HomeAssistantBatchResult::TransportFailure, 100);
+  CHECK_EQ(policy.consecutiveTransportFailures(), 1);
+  CHECK_EQ(policy.remainingDelayMs(100), 1000);
+  CHECK(!policy.canStart(1099));
+  CHECK(policy.canStart(1100));
+
+  policy.recordBatchResult(HomeAssistantBatchResult::TransportFailure, 1100);
+  CHECK_EQ(policy.consecutiveTransportFailures(), 2);
+  CHECK_EQ(policy.remainingDelayMs(1100), 2000);
+  policy.recordBatchResult(HomeAssistantBatchResult::TransportFailure, 3100);
+  CHECK_EQ(policy.consecutiveTransportFailures(), 3);
+  CHECK_EQ(policy.remainingDelayMs(3100), 4000);
+  policy.recordBatchResult(HomeAssistantBatchResult::TransportFailure, 7100);
+  CHECK_EQ(policy.remainingDelayMs(7100), 4000);  // capped
+
+  // Any completed HTTP exchange means the transport is reachable again.
+  policy.recordBatchResult(HomeAssistantBatchResult::HttpApplicationError,
+                           7100);
+  CHECK_EQ(policy.consecutiveTransportFailures(), 0);
+  CHECK(policy.canStart(7100));
+
+  // The deadline is intentionally wrap-safe for uint32_t millis().
+  policy.recordBatchResult(HomeAssistantBatchResult::TransportFailure,
+                           std::numeric_limits<std::uint32_t>::max() - 100);
+  CHECK_EQ(policy.remainingDelayMs(
+               std::numeric_limits<std::uint32_t>::max() - 100),
+           1000);
+  CHECK(!policy.canStart(500));
+  CHECK(policy.canStart(900));
+
+  policy.recordBatchResult(HomeAssistantBatchResult::Success, 900);
+  CHECK_EQ(policy.consecutiveTransportFailures(), 0);
+  CHECK_EQ(policy.remainingDelayMs(900), 0);
 }
 
 bool configurationStorageBeginForTest() { return true; }
@@ -698,6 +765,7 @@ int main() {
   testDayNightTransitionTimestampToleranceAndFallback();
   testDayNightOffsetsAndTransitions();
   testHomeAssistantStoredTokenReusePolicy();
+  testHomeAssistantBatchPolicy();
   testConfigurationWebRoutesDefaultsAndCallbacks();
   testMeteoRadarConfigDefaultsAndRangePolicy();
   testMeteoRadarConfigNormalization();

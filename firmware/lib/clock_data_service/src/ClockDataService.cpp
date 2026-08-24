@@ -11,6 +11,7 @@
 
 #include "DayNightLogic.h"
 #include "FirmwareHubCa.h"
+#include "HomeAssistantBatchPolicy.h"
 #include "NetworkFetchGate.h"
 #include "NetworkDiagnostics.h"
 
@@ -185,39 +186,41 @@ bool applyHomeAssistantState(const ClockConfig& config, const String& entityId,
   return true;
 }
 
-bool shouldRetryHomeAssistantRequest(int status) {
-  return status <= 0 || status == 408 || status == 429 || status >= 500;
-}
-
-bool requestHomeAssistantState(NetworkClient& client, const ClockConfig& config,
-                               const char* entityId, String& payload,
-                               int& lastStatus) {
+bool requestHomeAssistantState(HTTPClient& http, NetworkClient& client,
+                               const ClockConfig& config, const char* entityId,
+                               String& payload, int& lastStatus,
+                               bool& clientStarted, bool& transportFailure) {
+  transportFailure = false;
   if (entityId[0] == '\0') return false;
   const String url = String(config.homeAssistantUrl) + "/api/states/" + entityId;
   for (uint8_t attempt = 0; attempt < HOME_ASSISTANT_REQUEST_ATTEMPTS;
        ++attempt) {
-    HTTPClient http;
-    http.setConnectTimeout(HOME_ASSISTANT_CONNECT_TIMEOUT_MS);
-    http.setTimeout(HOME_ASSISTANT_RESPONSE_TIMEOUT_MS);
-    http.setReuse(true);
-    if (!http.begin(client, url)) {
+    const bool configured = clientStarted ? http.setURL(url) : http.begin(client, url);
+    if (!configured) {
       lastStatus = HTTPC_ERROR_CONNECTION_REFUSED;
+      transportFailure = true;
+      logNetworkFailure("Home Assistant transport", lastStatus);
+      break;
     } else {
-      http.addHeader("Authorization",
-                     String("Bearer ") + config.homeAssistantToken);
+      clientStarted = true;
       http.addHeader("Accept", "application/json");
       lastStatus = http.GET();
       if (lastStatus == HTTP_CODE_OK) payload = http.getString();
-      http.end();
       if (lastStatus == HTTP_CODE_OK) return true;
     }
-    if (!shouldRetryHomeAssistantRequest(lastStatus) ||
+    const auto decision = app_core::HomeAssistantBatchPolicy::decide(lastStatus);
+    if (!decision.continueBatch) {
+      transportFailure = true;
+      logNetworkFailure("Home Assistant transport", lastStatus);
+      break;
+    }
+    if (!decision.retryRequest ||
         attempt + 1 >= HOME_ASSISTANT_REQUEST_ATTEMPTS) {
       break;
     }
     delay(HOME_ASSISTANT_REQUEST_RETRY_DELAY_MS);
   }
-  logNetworkFailure("Home Assistant", lastStatus);
+  if (!transportFailure) logNetworkFailure("Home Assistant", lastStatus);
   return false;
 }
 
@@ -326,8 +329,15 @@ bool applySunState(const ClockConfig& config, const String& payload,
 // Upstream extraction: WaveshareHodiny.ino @
 // 9537a76932fc9269b2a22a5fb90a62785897c680, lines 855-959.
 bool fetchHomeAssistantStates(NetworkClient& client, const ClockConfig& config,
-                              ClockValues& values) {
+                              ClockValues& values, bool& transportFailure) {
   networkDiagnosticsBegin(NetworkDiagnosticKind::HomeAssistantRuntime);
+  HTTPClient http;
+  http.setConnectTimeout(HOME_ASSISTANT_CONNECT_TIMEOUT_MS);
+  http.setTimeout(HOME_ASSISTANT_RESPONSE_TIMEOUT_MS);
+  http.setReuse(true);
+  http.setAuthorizationType("Bearer");
+  http.setAuthorization(config.homeAssistantToken);
+  bool clientStarted = false;
   const char* entityIds[] = {
       config.weatherEntityId,
       config.leftSide.temperatureEntityId,
@@ -342,12 +352,17 @@ bool fetchHomeAssistantStates(NetworkClient& client, const ClockConfig& config,
   uint8_t configuredCount = 0;
   uint8_t successfulCount = 0;
   int lastStatus = 0;
+  transportFailure = false;
+  for (size_t index = 0; index < 7; ++index) {
+    if (entityIds[index][0] != '\0') ++configuredCount;
+  }
   for (size_t index = 0; index < 7; ++index) {
     if (entityIds[index][0] == '\0') continue;
-    ++configuredCount;
     String payload;
-    if (!requestHomeAssistantState(client, config, entityIds[index], payload,
-                                   lastStatus)) {
+    if (!requestHomeAssistantState(http, client, config, entityIds[index],
+                                   payload, lastStatus, clientStarted,
+                                   transportFailure)) {
+      if (transportFailure) break;
       continue;
     }
     String state;
@@ -360,9 +375,10 @@ bool fetchHomeAssistantStates(NetworkClient& client, const ClockConfig& config,
     }
     if (applied) ++successfulCount;
   }
-  const bool apiResponded = successfulCount > 0;
+  const bool apiResponded = successfulCount > 0 && !transportFailure;
   String detail = String(successfulCount) + '/' + configuredCount +
                   F(" entit načteno");
+  if (transportFailure) detail += F(", transportní batch přerušen");
   if (!apiResponded && lastStatus != 0) {
     detail += F(", poslední výsledek ");
     detail += lastStatus;
@@ -372,48 +388,65 @@ bool fetchHomeAssistantStates(NetworkClient& client, const ClockConfig& config,
   networkDiagnosticsEnd(NetworkDiagnosticKind::HomeAssistantRuntime,
                         apiResponded,
                         apiResponded ? HTTP_CODE_OK : lastStatus);
+  http.end();
   return apiResponded;
 }
 
-bool fetchHomeAssistantStates(const ClockConfig& config, ClockValues& values) {
+bool fetchHomeAssistantStates(const ClockConfig& config, ClockValues& values,
+                              bool& transportFailure) {
   if (config.homeAssistantUrl[0] == '\0' ||
       config.homeAssistantToken[0] == '\0') {
+    transportFailure = false;
     return false;
   }
   if (String(config.homeAssistantUrl).startsWith("https://")) {
     WiFiClientSecure client;
     client.setInsecure();
-    return fetchHomeAssistantStates(client, config, values);
+    return fetchHomeAssistantStates(client, config, values, transportFailure);
   }
   WiFiClient client;
-  return fetchHomeAssistantStates(client, config, values);
+  return fetchHomeAssistantStates(client, config, values, transportFailure);
 }
 
 bool fetchDayNightStates(NetworkClient& client, const ClockConfig& config,
-                         ClockValues& values) {
+                         ClockValues& values, bool& transportFailure) {
+  HTTPClient http;
+  http.setConnectTimeout(HOME_ASSISTANT_CONNECT_TIMEOUT_MS);
+  http.setTimeout(HOME_ASSISTANT_RESPONSE_TIMEOUT_MS);
+  http.setReuse(true);
+  http.setAuthorizationType("Bearer");
+  http.setAuthorization(config.homeAssistantToken);
+  bool clientStarted = false;
   values.sunStateAvailable = false;
   values.dayNightLightStateAvailable = false;
   bool sunUpdated = false;
   bool lightUpdated = false;
   String payload;
   int status = 0;
-  if (requestHomeAssistantState(client, config, config.sunEntityId, payload,
-                                status)) {
+  transportFailure = false;
+  if (requestHomeAssistantState(http, client, config, config.sunEntityId,
+                                payload, status, clientStarted,
+                                transportFailure)) {
     String state;
     if (extractJsonStringField(payload, "state", state)) {
       sunUpdated = applySunState(config, payload, state, values);
     }
   }
+  if (transportFailure) {
+    http.end();
+    return sunUpdated;
+  }
   payload = "";
-  if (requestHomeAssistantState(client, config,
-                                config.dayNightLightEntityId, payload,
-                                status)) {
+  if (requestHomeAssistantState(http, client, config,
+                                config.dayNightLightEntityId, payload, status,
+                                clientStarted, transportFailure)) {
     String state;
     if (extractJsonStringField(payload, "state", state)) {
       lightUpdated = applyHomeAssistantState(
           config, config.dayNightLightEntityId, state, values);
     }
   }
+  http.end();
   return sunUpdated || lightUpdated;
 }
 
@@ -425,10 +458,12 @@ bool fetchDayNightStates(const ClockConfig& config, ClockValues& values) {
   if (String(config.homeAssistantUrl).startsWith("https://")) {
     WiFiClientSecure client;
     client.setInsecure();
-    return fetchDayNightStates(client, config, values);
+    bool transportFailure = false;
+    return fetchDayNightStates(client, config, values, transportFailure);
   }
   WiFiClient client;
-  return fetchDayNightStates(client, config, values);
+  bool transportFailure = false;
+  return fetchDayNightStates(client, config, values, transportFailure);
 }
 
 // Upstream extraction: WaveshareHodiny.ino @
@@ -581,6 +616,9 @@ bool ClockDataService::consumeDayNightLightRefreshRequest() {
 // 9537a76932fc9269b2a22a5fb90a62785897c680, lines 995-1053.
 void ClockDataService::workerLoop() {
   ClockValues lastAvailableValues;
+  // Keep repeated allocation failures quiet without delaying a user-fixed
+  // configuration for more than one normal refresh interval.
+  app_core::HomeAssistantBatchPolicy homeAssistantPolicy(5000, 60000);
   for (;;) {
     const ClockConfig config = configSnapshot();
     ClockValues values = lastAvailableValues;
@@ -591,6 +629,7 @@ void ClockDataService::workerLoop() {
     }
 
     if (config.dataSource == CLOCK_DATA_SOURCE_OPEN_METEO) {
+      homeAssistantPolicy.reset();
       const network_host::FetchLease fetchLease(
           NETWORK_FETCH_GATE_TIMEOUT_MS);
       const bool apiResponded =
@@ -605,22 +644,48 @@ void ClockDataService::workerLoop() {
 
     if (config.homeAssistantUrl[0] == '\0' ||
         config.homeAssistantToken[0] == '\0') {
+      homeAssistantPolicy.reset();
       publishValues(ClockValues{});
       ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HOME_ASSISTANT_RETRY_MS));
       continue;
     }
 
+    const uint32_t nowMs = millis();
+    if (!homeAssistantPolicy.canStart(nowMs)) {
+      ulTaskNotifyTake(
+          pdTRUE,
+          pdMS_TO_TICKS(homeAssistantPolicy.remainingDelayMs(nowMs)));
+      continue;
+    }
+
     bool apiResponded = false;
+    bool transportFailure = false;
     {
       const network_host::FetchLease fetchLease(
           NETWORK_FETCH_GATE_TIMEOUT_MS);
-      apiResponded = fetchLease && fetchHomeAssistantStates(config, values);
+      apiResponded = fetchLease &&
+                     fetchHomeAssistantStates(config, values, transportFailure);
     }
-    values.homeAssistantOnline = apiResponded;
-    if (apiResponded) lastAvailableValues = values;
+    homeAssistantPolicy.recordBatchResult(
+        transportFailure
+            ? app_core::HomeAssistantBatchResult::TransportFailure
+            : (apiResponded ? app_core::HomeAssistantBatchResult::Success
+                            : app_core::HomeAssistantBatchResult::HttpApplicationError),
+        millis());
+    if (apiResponded) {
+      values.homeAssistantOnline = true;
+      lastAvailableValues = values;
+    } else {
+      // Keep the last complete snapshot visible while a transient transport
+      // failure is being retried.  Only the online indicator changes.
+      values = lastAvailableValues;
+      values.homeAssistantOnline = false;
+    }
     publishValues(values);
     if (!apiResponded) {
-      ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HOME_ASSISTANT_RETRY_MS));
+      if (!transportFailure) {
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HOME_ASSISTANT_RETRY_MS));
+      }
       continue;
     }
 

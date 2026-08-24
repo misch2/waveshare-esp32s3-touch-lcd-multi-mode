@@ -40,6 +40,11 @@ Implemented screens:
   firmware discovery and installation are deliberately disabled in the
   combined build; updates are performed manually by flashing a locally built
   image.
+- A complete Home Assistant refresh reuses one HTTP/TLS client across all
+  configured entities. Transport failures stop the current batch, keep the
+  last complete values and back off exponentially for 5--60 seconds. This
+  avoids the former per-entity handshake bursts when the fragmented internal
+  heap has ample total memory but no large contiguous block.
 - `meteo.radar` now wraps the pinned MeteoPlaneRadar `ScreenWeather` renderer,
   CHMI animation client, RainViewer tile client, PNG decoding, European borders,
   city labels and source status model. The original renderer draws into a
