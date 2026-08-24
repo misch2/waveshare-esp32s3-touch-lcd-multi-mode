@@ -64,8 +64,8 @@ Implemented screens:
   `Route` implementations. It retains the original adsb.fi parser, map,
   filters, range persistence, tap-to-select detail and cached adsbdb route
   lookup. ADS-B and route TLS work is serialized through the common fetch
-  lease; the adapter reuses the same Meteo canvas and still needs a physical
-  smoke test.
+  lease; the adapter reuses the same Meteo canvas. Rendering, navigation and
+  interaction have passed a physical smoke test.
 
 The host configuration is stored as versioned JSON in NVS. Schema 3 uses stable
 screen IDs, enabled flags and configured order, always keeps at least one
@@ -93,7 +93,19 @@ The clock web module now accepts the host-owned `WebServer`. The combined
 firmware mounts it at `/clock/` and `/api/modules/clock/*`; the standalone clock
 firmware retains its original `/` and `/api/*` aliases. The original HTML,
 serialization, validation, password/session handling and export/import logic
-remain upstream. Do not mount the colliding Meteo routes unchanged.
+remain upstream.
+
+The same server now mounts the adapted original Meteo page at `/meteo/` and
+its configuration, status, remote screen/range and geocoding endpoints at
+`/api/modules/meteo/*`. The adapter streams the pinned PROGMEM page rather than
+maintaining a copied UI, rewrites its absolute API paths and hides controls
+owned by the combined host (Wi-Fi, clock appearance, automatic rotation,
+system password and OTA). Meteo JSON still comes from the original
+`Settings_ToJson()` / `Settings_FromJson()` implementation. Screen checkboxes
+map to stable `AppConfig` IDs, commands are executed later by the UI loop, and
+all routes reuse the clock web access/session/Origin policy. A locked or
+protected Meteo page redirects to the shared clock entry page for activation
+or login. Firmware updates remain manual-only.
 
 The first production Meteo seam is connected independently of rendering.
 `MeteoRadarConfig` is a fixed-size, host-testable snapshot rather than another

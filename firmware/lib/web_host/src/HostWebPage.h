@@ -31,10 +31,11 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
       <p>Čas, Home Assistant, Open-Meteo a nastavení vzhledu.</p>
       <a href="/clock/">Otevřít nastavení hodin</a>
     </section>
-    <section class="module disabled">
-      <div class="state">Připravuje se</div>
+    <section class="module">
+      <div class="state">Aktivní modul</div>
       <h2>MeteoPlaneRadar</h2>
-      <p>Konfigurace meteoradaru, letadel a předpovědi bude připojena v další etapě.</p>
+      <p>Radar, letadla, předpověď a nastavení zdrojů meteorologických dat.</p>
+      <a href="/meteo/">Otevřít nastavení MeteoPlaneRadar</a>
     </section>
   </main>
 </body>

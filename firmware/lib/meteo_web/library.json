@@ -1,0 +1,14 @@
+{
+  "name": "meteo_web",
+  "version": "0.1.0",
+  "build": {
+    "includeDir": "include"
+  },
+  "dependencies": {
+    "bblanchon/ArduinoJson": "7.1.0",
+    "WebServer": "*",
+    "meteo_settings": "*",
+    "network_host": "*",
+    "radar_screen": "*"
+  }
+}

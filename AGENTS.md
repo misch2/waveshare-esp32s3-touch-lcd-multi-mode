@@ -75,14 +75,16 @@ physical display. The following are verified:
 - `meteo.planes` compiles the original `ScreenPlanes`, `ADSB` and `Route`
   implementations and shares the host-owned Meteo canvas. It retains the
   upstream map, filtering, persisted range, aircraft detail and cached route
-  lookup while serializing its TLS batches through `FetchLease`; physical
-  verification is still required;
+  lookup while serializing its TLS batches through `FetchLease`; rendering,
+  navigation and interaction have passed a physical smoke test;
 - Home Assistant refreshes reuse one `HTTPClient` and TLS connection for the
   complete entity batch. A transport failure aborts the batch, preserves the
   last complete snapshot and uses a wrap-safe 5--60 second exponential
   backoff instead of multiplying TLS handshakes across every entity;
-- the common landing page and clock module are connected; the Meteo web module
-  is not connected yet.
+- the adapted original Meteo page is mounted by the same host at `/meteo/`,
+  with configuration, status, remote screen/range control and geocoding below
+  `/api/modules/meteo/*`. Its build and native route-contract tests pass;
+  physical web/save verification is still required.
 
 Do not add parallel demo implementations for remaining screens. Adapt the
 proven upstream functionality instead.
@@ -341,6 +343,23 @@ addition to the canonical routes, so existing bookmarks and control URLs remain
 usable. Do not register Meteo's colliding `/`, `/api/config` or `/api/status`
 routes alongside the host routes.
 
+`firmware/lib/meteo_web` mounts the pinned Meteo `PAGE_HTML` without copying it
+into a maintained fork. It streams the PROGMEM source in bounded chunks,
+rewrites the absolute `/api/*` calls to `/api/modules/meteo/*`, and hides only
+the standalone-owned Wi-Fi, clock appearance, auto-rotation, system-password
+and OTA controls. Expected source markers are validated when routes register so
+an incompatible upstream page update fails visibly. JSON loading and saving
+still use the upstream `Settings_ToJson()` / `Settings_FromJson()` model.
+
+Meteo screen checkbox values are translated to the host's stable IDs and saved
+in `AppConfig`; the upstream numeric screen mask is not the scheduler source of
+truth. Screen and range HTTP commands are queued and applied by the main loop.
+The Meteo routes reuse the clock web module's timed-mode, session-cookie and
+Origin checks; a locked or protected `/meteo/` page redirects to the shared
+clock entry page for activation or login. Geocoding holds the common
+`FetchLease`. No Meteo Wi-Fi,
+server lifecycle or firmware-update route is registered in the combined build.
+
 Preserve the original user experience and validation logic by adapting route
 registration, not by reimplementing the pages from memory. A suitable target
 layout is:
@@ -512,7 +531,10 @@ disabled-screen skipping, swipe-only screen navigation and the absence of
 timer-driven switching. Extend
 these tests whenever the host contracts change. They also cover the reused
 day/night transition tolerance, offsets and unavailable-data behavior, plus
-the Home Assistant stored-token URL reuse policy used by the web flow.
+the Home Assistant stored-token URL reuse policy used by the web flow. The
+route-contract tests also cover the Meteo page/API defaults, disabled legacy
+lifecycle/update flags, bounded config/status callbacks, shared access callback
+and queued command/storage callback wiring.
 
 ## Near-term implementation order
 
@@ -522,13 +544,11 @@ the Home Assistant stored-token URL reuse policy used by the web flow.
 2. Physically verify the real CHMI and RainViewer radar adapter, including
    RainViewer data, first-load/refresh animation and memory headroom; CHMI and
    the interaction path have already passed.
-3. Physically verify the new `meteo.planes` adapter, including ADS-B data,
-   range gestures, tap detail, route lookup and memory headroom.
-4. Mount the adapted original Meteo configuration page under its module prefix
-   and connect it from the existing common landing page.
-5. Add combined configuration export/import and diagnostics. Keep firmware
+3. Physically verify `/meteo/`, its configuration saves, remote screen/range
+   controls, geocoding, shared authentication and display storage lifecycle.
+4. Add combined configuration export/import and diagnostics. Keep firmware
    updates manual-only.
-6. Add regression tests and repeat the hardware smoke test after every phase.
+5. Add regression tests and repeat the hardware smoke test after every phase.
 
 At every phase, prefer a thin wrapper over an imitation of behavior that is
 already implemented and tested upstream.

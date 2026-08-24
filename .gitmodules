@@ -1,6 +1,6 @@
 [submodule "MeteoPlaneRadar"]
 	path = MeteoPlaneRadar
-	url = https://github.com/petus/MeteoPlaneRadar
+	url = https://github.com/misch2/MeteoPlaneRadar
 [submodule "waveshare-hodiny"]
 	path = waveshare-hodiny
-	url = https://github.com/CooLajz/waveshare-hodiny
+	url = https://github.com/misch2/waveshare-hodiny-fork

@@ -5,6 +5,7 @@
 #include "HomeAssistantConnectionPolicy.h"
 #include "GestureRecognizer.h"
 #include "MeteoRadarConfig.h"
+#include "MeteoWebRoutes.h"
 #include "ScreenManager.h"
 
 #include <cstdint>
@@ -336,6 +337,37 @@ void testHomeAssistantBatchPolicy() {
 bool configurationStorageBeginForTest() { return true; }
 bool configurationStorageEndForTest() { return false; }
 
+std::size_t meteoConfigLoadForTest(char* out, std::size_t capacity) {
+  constexpr char kPayload[] = "{\"source\":\"chmu\"}";
+  constexpr std::size_t kPayloadLength = sizeof(kPayload) - 1;
+  if (out == nullptr || capacity <= kPayloadLength) return 0;
+  std::memcpy(out, kPayload, sizeof(kPayload));
+  return kPayloadLength;
+}
+
+bool meteoConfigSaveForTest(const char* json, std::size_t length) {
+  constexpr char kPayload[] = "{\"source\":\"chmu\"}";
+  constexpr std::size_t kPayloadLength = sizeof(kPayload) - 1;
+  return json != nullptr && length == kPayloadLength &&
+         std::memcmp(json, kPayload, kPayloadLength) == 0;
+}
+
+std::size_t meteoStatusLoadForTest(char* out, std::size_t capacity) {
+  constexpr char kPayload[] = "{\"ok\":true}";
+  constexpr std::size_t kPayloadLength = sizeof(kPayload) - 1;
+  if (out == nullptr || capacity <= kPayloadLength) return 0;
+  std::memcpy(out, kPayload, sizeof(kPayload));
+  return kPayloadLength;
+}
+
+bool meteoAccessAllowedForTest() { return true; }
+
+bool meteoScreenCommandForTest(
+    const app_core::MeteoWebScreenCommand& command) {
+  return command.kind == app_core::MeteoWebScreenCommandKind::Range &&
+         command.value == 1;
+}
+
 void testConfigurationWebRoutesDefaultsAndCallbacks() {
   const ConfigurationWebRoutes defaults;
   CHECK(defaults.webServer == nullptr);
@@ -374,6 +406,94 @@ void testConfigurationWebRoutesDefaultsAndCallbacks() {
   options.storageEnd = routes.storageEnd;
   CHECK(options.storageBegin == configurationStorageBeginForTest);
   CHECK(options.storageEnd == configurationStorageEndForTest);
+}
+
+void testMeteoWebRoutesDefaultsAndCallbacks() {
+  using app_core::MeteoWebOptions;
+  using app_core::MeteoWebRoutes;
+
+  const MeteoWebRoutes defaults;
+  CHECK(defaults.webServer == nullptr);
+  CHECK_STREQ(defaults.pagePath, "/meteo/");
+  CHECK_STREQ(defaults.apiPrefix, "/api/modules/meteo");
+  CHECK_STREQ(defaults.pagePath, app_core::METEO_WEB_DEFAULT_PAGE_PATH);
+  CHECK_STREQ(defaults.apiPrefix, app_core::METEO_WEB_DEFAULT_API_PREFIX);
+  CHECK(!defaults.registerLegacyAliases);
+  CHECK(!defaults.manageServerLifecycle);
+  CHECK(!defaults.firmwareUpdatesEnabled);
+  CHECK(defaults.loadConfig == nullptr);
+  CHECK(defaults.loadStatus == nullptr);
+  CHECK(defaults.saveConfig == nullptr);
+  CHECK(defaults.handleScreenCommand == nullptr);
+  CHECK(defaults.accessAllowed == nullptr);
+  CHECK(defaults.storageBegin == nullptr);
+  CHECK(defaults.storageEnd == nullptr);
+  CHECK(!defaults.hasConfigCallbacks());
+  CHECK(!defaults.hasStatusCallback());
+  CHECK(!defaults.hasStorageCallbacks());
+
+  MeteoWebRoutes routes;
+  routes.pagePath = "/custom/meteo/";
+  routes.apiPrefix = "/api/custom-meteo";
+  routes.registerLegacyAliases = true;
+  routes.manageServerLifecycle = true;
+  routes.firmwareUpdatesEnabled = true;
+  routes.loadConfig = meteoConfigLoadForTest;
+  routes.loadStatus = meteoStatusLoadForTest;
+  routes.saveConfig = meteoConfigSaveForTest;
+  routes.handleScreenCommand = meteoScreenCommandForTest;
+  routes.accessAllowed = meteoAccessAllowedForTest;
+  routes.storageBegin = configurationStorageBeginForTest;
+  routes.storageEnd = configurationStorageEndForTest;
+
+  CHECK_STREQ(routes.pagePath, "/custom/meteo/");
+  CHECK_STREQ(routes.apiPrefix, "/api/custom-meteo");
+  CHECK(routes.registerLegacyAliases);
+  CHECK(routes.manageServerLifecycle);
+  CHECK(routes.firmwareUpdatesEnabled);
+  CHECK(routes.loadConfig == meteoConfigLoadForTest);
+  CHECK(routes.loadStatus == meteoStatusLoadForTest);
+  CHECK(routes.saveConfig == meteoConfigSaveForTest);
+  CHECK(routes.handleScreenCommand == meteoScreenCommandForTest);
+  CHECK(routes.accessAllowed == meteoAccessAllowedForTest);
+  CHECK(routes.storageBegin == configurationStorageBeginForTest);
+  CHECK(routes.storageEnd == configurationStorageEndForTest);
+  CHECK(routes.hasConfigCallbacks());
+  CHECK(routes.hasStatusCallback());
+  CHECK(routes.hasStorageCallbacks());
+
+  char json[32] = {};
+  const std::size_t loaded = routes.loadConfig(json, sizeof(json));
+  CHECK_EQ(loaded, std::strlen("{\"source\":\"chmu\"}"));
+  CHECK_STREQ(json, "{\"source\":\"chmu\"}");
+  CHECK(routes.saveConfig(json, loaded));
+
+  char status[24] = {};
+  const std::size_t statusLength = routes.loadStatus(status, sizeof(status));
+  CHECK_EQ(statusLength, std::strlen("{\"ok\":true}"));
+  CHECK_STREQ(status, "{\"ok\":true}");
+  CHECK(routes.accessAllowed());
+
+  const app_core::MeteoWebScreenCommand rangeCommand{
+      app_core::MeteoWebScreenCommandKind::Range, 1};
+  CHECK(routes.handleScreenCommand(rangeCommand));
+  CHECK(routes.storageBegin());
+  CHECK(!routes.storageEnd());
+
+  // The options name is a compatibility alias for the same route DTO.
+  MeteoWebOptions options;
+  options.loadConfig = routes.loadConfig;
+  options.loadStatus = routes.loadStatus;
+  options.saveConfig = routes.saveConfig;
+  options.handleScreenCommand = routes.handleScreenCommand;
+  options.accessAllowed = routes.accessAllowed;
+  CHECK(options.loadConfig == meteoConfigLoadForTest);
+  CHECK(options.loadStatus == meteoStatusLoadForTest);
+  CHECK(options.saveConfig == meteoConfigSaveForTest);
+  CHECK(options.handleScreenCommand == meteoScreenCommandForTest);
+  CHECK(options.accessAllowed == meteoAccessAllowedForTest);
+  CHECK(options.hasConfigCallbacks());
+  CHECK(options.hasStatusCallback());
 }
 
 void testMeteoRadarConfigDefaultsAndRangePolicy() {
@@ -867,6 +987,7 @@ int main() {
   testHomeAssistantStoredTokenReusePolicy();
   testHomeAssistantBatchPolicy();
   testConfigurationWebRoutesDefaultsAndCallbacks();
+  testMeteoWebRoutesDefaultsAndCallbacks();
   testMeteoRadarConfigDefaultsAndRangePolicy();
   testMeteoRadarConfigNormalization();
   testGestureDirectionsAndDebounce();

@@ -4,6 +4,12 @@
 #include <WebServer.h>
 
 #include "HostWebPage.h"
+#include "MeteoWebAdapter.h"
+
+// Defined after the pinned ConfigurationWeb.cpp include.  The function is a
+// narrow root-owned seam into that implementation's anonymous-namespace
+// authentication policy; it is intentionally not a second auth model.
+extern bool configurationWebRequireHostAccess();
 
 namespace web_host {
 namespace {
@@ -39,7 +45,8 @@ bool begin(ClockConfigLoadCallback loadCallback,
            DisplayPowerCallback displayPowerCallback,
            DisplayPowerStatusCallback displayPowerStatusCallback,
            StorageBeginCallback storageBeginCallback,
-           StorageEndCallback storageEndCallback) {
+           StorageEndCallback storageEndCallback,
+           const app_core::MeteoWebRoutes& meteoRoutes) {
   if (!ensureClockWebNamespaces()) return false;
 
   ConfigurationWebRoutes routes;
@@ -58,6 +65,19 @@ bool begin(ClockConfigLoadCallback loadCallback,
           displayPowerCallback, displayPowerStatusCallback)) {
     return false;
   }
+
+  // Meteo uses the same caller-owned server and the same canonical security
+  // policy as the clock module.  These host invariants are forced here even
+  // if a caller supplies a DTO populated for a standalone adapter.
+  app_core::MeteoWebRoutes hostMeteoRoutes = meteoRoutes;
+  hostMeteoRoutes.webServer = &server;
+  hostMeteoRoutes.pagePath = app_core::METEO_WEB_DEFAULT_PAGE_PATH;
+  hostMeteoRoutes.apiPrefix = app_core::METEO_WEB_DEFAULT_API_PREFIX;
+  hostMeteoRoutes.registerLegacyAliases = false;
+  hostMeteoRoutes.manageServerLifecycle = false;
+  hostMeteoRoutes.firmwareUpdatesEnabled = false;
+  hostMeteoRoutes.accessAllowed = configurationWebRequireHostAccess;
+  if (!meteo_web::registerRoutes(hostMeteoRoutes)) return false;
 
   server.on("/", HTTP_GET, handleHostRoot);
   server.onNotFound([]() {
