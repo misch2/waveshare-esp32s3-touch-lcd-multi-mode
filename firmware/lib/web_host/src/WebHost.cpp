@@ -3,6 +3,10 @@
 #include <Preferences.h>
 #include <WebServer.h>
 
+#include <esp_heap_caps.h>
+
+#include <cstring>
+
 #include "HostWebPage.h"
 #include "MeteoWebAdapter.h"
 
@@ -14,6 +18,16 @@ extern bool configurationWebRequireHostAccess();
 namespace web_host {
 namespace {
 WebServer server(80);
+
+constexpr std::size_t kStatusBufferSize = 4096;
+constexpr std::size_t kDiagnosticsBufferSize = 12288;
+constexpr std::size_t kExportBufferSize = 32768;
+constexpr std::size_t kImportMessageSize = 256;
+
+app_core::CombinedWebRoutes combinedRoutes;
+char* statusBuffer = nullptr;
+char* diagnosticsBuffer = nullptr;
+char* exportBuffer = nullptr;
 
 bool ensureClockWebNamespaces() {
   // The combined host starts its web layer before RGB scanout, so this is the
@@ -28,11 +42,159 @@ bool ensureClockWebNamespaces() {
   return true;
 }
 
+bool combinedAccessAllowed() {
+  // The combined host deliberately uses the clock module's authentication
+  // policy for every host-level route. The callback also owns the denial
+  // response (401/423), so callers must return without sending another body.
+  return combinedRoutes.accessAllowed == nullptr ||
+         combinedRoutes.accessAllowed();
+}
+
+void sendJson(int status, const char* body) {
+  server.send(status, "application/json; charset=utf-8", body ? body : "{}");
+}
+
+bool sendJsonFromCallback(int status,
+                          app_core::CombinedJsonLoadCallback callback,
+                          char* buffer,
+                          std::size_t capacity) {
+  if (callback == nullptr || buffer == nullptr || capacity == 0) {
+    sendJson(404, "{\"ok\":false,\"message\":\"Není k dispozici.\"}");
+    return false;
+  }
+  const std::size_t length = callback(buffer, capacity);
+  if (length == 0 || length >= capacity) {
+    sendJson(500, "{\"ok\":false,\"message\":\"Serializace se nezdařila.\"}");
+    return false;
+  }
+  // Avoid WebServer's const-char overload, which copies the complete JSON
+  // into an internal-RAM String. The callback buffer lives in PSRAM.
+  server.setContentLength(length);
+  server.send(status, "application/json; charset=utf-8", "");
+  server.sendContent(buffer, length);
+  return true;
+}
+
 void handleHostRoot() {
   server.sendHeader(F("Cache-Control"), F("no-store"));
   server.sendHeader(F("X-Content-Type-Options"), F("nosniff"));
   server.sendHeader(F("X-Frame-Options"), F("DENY"));
   server.send_P(200, PSTR("text/html; charset=utf-8"), HOST_WEB_PAGE);
+}
+
+void handleHostStatus() {
+  if (!combinedAccessAllowed()) return;
+  sendJsonFromCallback(200, combinedRoutes.loadStatus, statusBuffer,
+                       kStatusBufferSize);
+}
+
+void handleHostDiagnostics() {
+  if (!combinedAccessAllowed()) return;
+  sendJsonFromCallback(200, combinedRoutes.loadDiagnostics, diagnosticsBuffer,
+                       kDiagnosticsBufferSize);
+}
+
+void handleHostExport() {
+  if (!combinedAccessAllowed()) return;
+  server.sendHeader(F("Content-Disposition"),
+                    F("attachment; filename=waveshare-multi-mode-backup.json"));
+  sendJsonFromCallback(200, combinedRoutes.loadExport, exportBuffer,
+                       kExportBufferSize);
+}
+
+void sendImportResult(int status, bool ok, const char* message) {
+  char response[512];
+  std::size_t at = 0;
+  const char* prefix = ok ? "{\"ok\":true" : "{\"ok\":false";
+  const std::size_t prefixLength = std::strlen(prefix);
+  std::memcpy(response + at, prefix, prefixLength);
+  at += prefixLength;
+
+  if (message != nullptr && message[0] != '\0' && at + 13 < sizeof(response)) {
+    const char field[] = ",\"message\":\"";
+    std::memcpy(response + at, field, sizeof(field) - 1);
+    at += sizeof(field) - 1;
+    for (const unsigned char* source =
+             reinterpret_cast<const unsigned char*>(message);
+         *source != '\0' && at + 3 < sizeof(response); ++source) {
+      const unsigned char value = *source;
+      if (value == '\"' || value == '\\') {
+        response[at++] = '\\';
+        response[at++] = static_cast<char>(value);
+      } else if (value >= 0x20U) {
+        response[at++] = static_cast<char>(value);
+      } else {
+        response[at++] = ' ';
+      }
+    }
+    if (at + 2 < sizeof(response)) response[at++] = '\"';
+  }
+  if (at + 2 >= sizeof(response)) at = sizeof(response) - 3;
+  response[at++] = '}';
+  response[at] = '\0';
+  sendJson(status, response);
+}
+
+void handleHostImport() {
+  if (!combinedAccessAllowed()) return;
+  if (combinedRoutes.validateImport == nullptr ||
+      combinedRoutes.importConfig == nullptr ||
+      !combinedRoutes.hasStorageCallbacks()) {
+    sendImportResult(404, false, "Obnova konfigurace není k dispozici.");
+    return;
+  }
+  if (!server.hasArg("plain")) {
+    sendImportResult(400, false, "Chybí tělo požadavku.");
+    return;
+  }
+  const String body = server.arg("plain");
+  if (body.length() == 0) {
+    sendImportResult(400, false, "Konfigurace je prázdná.");
+    return;
+  }
+  if (body.length() > app_core::COMBINED_WEB_MAX_IMPORT_BYTES) {
+    sendImportResult(413, false, "Konfigurace je příliš velká.");
+    return;
+  }
+
+  char detail[kImportMessageSize];
+  detail[0] = '\0';
+  if (!combinedRoutes.validateImport(body.c_str(), body.length(), detail,
+                                     sizeof(detail))) {
+    detail[sizeof(detail) - 1] = '\0';
+    sendImportResult(400, false,
+                     detail[0] != '\0' ? detail
+                                        : "Konfigurace není platná.");
+    return;
+  }
+
+  if (!combinedRoutes.storageBegin()) {
+    sendImportResult(503, false, "Úložiště konfigurace není dostupné.");
+    return;
+  }
+
+  detail[0] = '\0';
+  const bool imported = combinedRoutes.importConfig(
+      body.c_str(), body.length(), detail, sizeof(detail));
+  detail[sizeof(detail) - 1] = '\0';
+  const bool storageEnded = combinedRoutes.storageEnd();
+  if (!storageEnded) {
+    sendImportResult(500, false, "Dokončení zápisu konfigurace selhalo.");
+    return;
+  }
+  if (!imported) {
+    sendImportResult(400, false,
+                     detail[0] != '\0' ? detail
+                                        : "Konfiguraci se nepodařilo obnovit.");
+    return;
+  }
+  sendImportResult(200, true, detail);
+}
+
+char* allocateBufferIfNeeded(char* current, std::size_t capacity) {
+  if (current != nullptr) return current;
+  return static_cast<char*>(
+      heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
 }
 }  // namespace
 
@@ -46,8 +208,21 @@ bool begin(ClockConfigLoadCallback loadCallback,
            DisplayPowerStatusCallback displayPowerStatusCallback,
            StorageBeginCallback storageBeginCallback,
            StorageEndCallback storageEndCallback,
-           const app_core::MeteoWebRoutes& meteoRoutes) {
+           const app_core::MeteoWebRoutes& meteoRoutes,
+           const app_core::CombinedWebRoutes& requestedCombinedRoutes) {
   if (!ensureClockWebNamespaces()) return false;
+
+  const bool hasCombinedStorageBegin =
+      requestedCombinedRoutes.storageBegin != nullptr;
+  const bool hasCombinedStorageEnd = requestedCombinedRoutes.storageEnd != nullptr;
+  if (hasCombinedStorageBegin != hasCombinedStorageEnd ||
+      (requestedCombinedRoutes.importConfig != nullptr &&
+       (!requestedCombinedRoutes.hasImportValidationCallback() ||
+        !requestedCombinedRoutes.hasStorageCallbacks()))) {
+    // An import without both halves of the display-safe storage transaction
+    // must never be exposed: a flash write could corrupt RGB scanout.
+    return false;
+  }
 
   ConfigurationWebRoutes routes;
   routes.webServer = &server;
@@ -78,6 +253,31 @@ bool begin(ClockConfigLoadCallback loadCallback,
   hostMeteoRoutes.firmwareUpdatesEnabled = false;
   hostMeteoRoutes.accessAllowed = configurationWebRequireHostAccess;
   if (!meteo_web::registerRoutes(hostMeteoRoutes)) return false;
+
+  combinedRoutes = requestedCombinedRoutes;
+  // Ignore a caller-provided policy here. This is intentionally one shared
+  // clock-auth policy, rather than a second host-level access model.
+  combinedRoutes.accessAllowed = configurationWebRequireHostAccess;
+  if (combinedRoutes.loadStatus != nullptr) {
+    statusBuffer = allocateBufferIfNeeded(statusBuffer, kStatusBufferSize);
+    if (statusBuffer == nullptr) return false;
+    server.on(app_core::COMBINED_WEB_STATUS_PATH, HTTP_GET, handleHostStatus);
+  }
+  if (combinedRoutes.loadDiagnostics != nullptr) {
+    diagnosticsBuffer =
+        allocateBufferIfNeeded(diagnosticsBuffer, kDiagnosticsBufferSize);
+    if (diagnosticsBuffer == nullptr) return false;
+    server.on(app_core::COMBINED_WEB_DIAGNOSTICS_PATH, HTTP_GET,
+              handleHostDiagnostics);
+  }
+  if (combinedRoutes.loadExport != nullptr) {
+    exportBuffer = allocateBufferIfNeeded(exportBuffer, kExportBufferSize);
+    if (exportBuffer == nullptr) return false;
+    server.on(app_core::COMBINED_WEB_EXPORT_PATH, HTTP_GET, handleHostExport);
+  }
+  if (combinedRoutes.importConfig != nullptr) {
+    server.on(app_core::COMBINED_WEB_IMPORT_PATH, HTTP_POST, handleHostImport);
+  }
 
   server.on("/", HTTP_GET, handleHostRoot);
   server.onNotFound([]() {

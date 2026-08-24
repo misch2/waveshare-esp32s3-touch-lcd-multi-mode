@@ -4,6 +4,7 @@
 // second web configuration schema. The firmware build exposes the pinned
 // submodule include directory through platformio.ini.
 #include "ConfigurationWeb.h"
+#include "CombinedWebRoutes.h"
 #include "MeteoWebRoutes.h"
 
 namespace web_host {
@@ -36,7 +37,8 @@ bool begin(ClockConfigLoadCallback loadCallback,
            DisplayPowerStatusCallback displayPowerStatusCallback,
            StorageBeginCallback storageBeginCallback,
            StorageEndCallback storageEndCallback,
-           const app_core::MeteoWebRoutes& meteoRoutes);
+           const app_core::MeteoWebRoutes& meteoRoutes,
+           const app_core::CombinedWebRoutes& combinedRoutes);
 void loop();
 void ensureActive();
 bool active();

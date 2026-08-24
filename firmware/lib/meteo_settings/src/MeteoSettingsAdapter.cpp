@@ -9,6 +9,8 @@
 #endif
 #include "../../../../MeteoPlaneRadar/MeteoPlaneRadar/Settings.h"
 
+extern bool MeteoSettings_ClearLocationForHost();
+
 namespace meteo_settings {
 namespace {
 bool started = false;
@@ -42,6 +44,8 @@ void stepRadarRange(int step) {
   config.stepRange(step);
   Settings_SetMeteoRange(config.rangeIndex);
 }
+
+bool clearLocation() { return MeteoSettings_ClearLocationForHost(); }
 
 void loop() {
   if (started) Settings_Tick();

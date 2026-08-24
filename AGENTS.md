@@ -83,8 +83,14 @@ physical display. The following are verified:
   backoff instead of multiplying TLS handshakes across every entity;
 - the adapted original Meteo page is mounted by the same host at `/meteo/`,
   with configuration, status, remote screen/range control and geocoding below
-  `/api/modules/meteo/*`. Its build and native route-contract tests pass;
-  physical web/save verification is still required.
+  `/api/modules/meteo/*`. Configuration access, saving and resulting runtime
+  changes have passed a physical smoke test;
+- the common landing page exposes authenticated host status and diagnostics,
+  plus a versioned combined configuration export/import. The combined backup
+  keeps host navigation, clock settings and Meteo settings in separate
+  sections and excludes Wi-Fi credentials, HA tokens, web/control passwords
+  and every firmware-update field. Build and native route-contract tests pass;
+  physical export/import verification is still required.
 
 Do not add parallel demo implementations for remaining screens. Adapt the
 proven upstream functionality instead.
@@ -388,6 +394,15 @@ Module web handlers may validate and enqueue changes, but rendering and screen
 switches must be applied by the main loop. Keep export/import versioned and omit
 Wi-Fi passwords, Home Assistant tokens, admin passwords and control secrets.
 
+The host-wide routes are `/api/status`, `/api/diagnostics`,
+`/api/config/export` and `/api/config/import`. They reuse the clock timed-mode,
+session-cookie and Origin policy. Import is a replace-style operation: validate
+the complete envelope before writing, preserve the stored HA token only when
+the imported HA URL is exactly unchanged, preserve access credentials and web
+mode, and bracket all namespace writes in one display-storage transaction.
+Automatic update policy, discovery state and release metadata are not part of
+this format or these diagnostics.
+
 Every runtime web handler that writes the `clockcfg` partition must use the
 host-provided storage begin/end callbacks. The clock configuration and web mode
 are persisted inside one nested transaction; password changes use the same
@@ -544,11 +559,10 @@ and queued command/storage callback wiring.
 2. Physically verify the real CHMI and RainViewer radar adapter, including
    RainViewer data, first-load/refresh animation and memory headroom; CHMI and
    the interaction path have already passed.
-3. Physically verify `/meteo/`, its configuration saves, remote screen/range
-   controls, geocoding, shared authentication and display storage lifecycle.
-4. Add combined configuration export/import and diagnostics. Keep firmware
-   updates manual-only.
-5. Add regression tests and repeat the hardware smoke test after every phase.
+3. Physically verify the common diagnostics and a combined export/import
+   round-trip, including the display storage lifecycle and preservation of
+   Wi-Fi, HA token and web credentials.
+4. Add regression tests and repeat the hardware smoke test after every phase.
 
 At every phase, prefer a thin wrapper over an imitation of behavior that is
 already implemented and tested upstream.

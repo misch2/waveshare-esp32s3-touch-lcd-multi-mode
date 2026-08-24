@@ -107,6 +107,16 @@ all routes reuse the clock web access/session/Origin policy. A locked or
 protected Meteo page redirects to the shared clock entry page for activation
 or login. Firmware updates remain manual-only.
 
+The common landing page also exposes host-level status and diagnostics plus a
+combined backup/restore flow. The canonical routes are `/api/status`,
+`/api/diagnostics`, `/api/config/export` and `/api/config/import`. The backup is
+a versioned envelope with independent host, clock and Meteo sections. It never
+contains Wi-Fi credentials, the Home Assistant token, web/control passwords or
+firmware-update fields; web access mode and credentials are preserved locally
+during a restore. The complete payload is validated before the first NVS write,
+and all writes share one display-safe storage transaction. Firmware discovery
+and installation are intentionally absent.
+
 The first production Meteo seam is connected independently of rendering.
 `MeteoRadarConfig` is a fixed-size, host-testable snapshot rather than another
 settings store. `meteo_settings` compiles the pinned upstream `Settings` and

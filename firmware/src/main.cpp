@@ -8,12 +8,15 @@
 
 #include <cmath>
 #include <cstring>
+#include <new>
 
 #include "AppConfig.h"
 #include "AppConfigStore.h"
 #include "ClockConfig.h"
 #include "ClockDataService.h"
 #include "ClockScreen.h"
+#include "CombinedConfigCodec.h"
+#include "CombinedWebRoutes.h"
 #include "DisplayHost.h"
 #include "ForecastScreen.h"
 #include "GestureRecognizer.h"
@@ -22,6 +25,7 @@
 #include "MeteoSettingsAdapter.h"
 #include "MeteoWebRoutes.h"
 #include "NetworkHost.h"
+#include "NetworkDiagnostics.h"
 #include "PlanesScreen.h"
 #include "RadarScreen.h"
 #include "ScreenManager.h"
@@ -69,6 +73,9 @@ bool meteoWebCommandPending = false;
 bool meteoConfigApplyPending = false;
 bool meteoRestartPending = false;
 uint32_t meteoRestartAt = 0;
+combined_config::ImportBundle* pendingCombinedImport = nullptr;
+combined_config::ImportBundle* previousCombinedConfig = nullptr;
+bool combinedImportValidated = false;
 
 constexpr char kClockScreenId[] = "clock.dashboard";
 constexpr char kPlanesScreenId[] = "meteo.planes";
@@ -76,7 +83,37 @@ constexpr char kRadarScreenId[] = "meteo.radar";
 constexpr char kForecastScreenId[] = "meteo.forecast";
 constexpr char kCombinedFirmwareVersion[] = "development";
 
+class PsramJsonAllocator final : public Allocator {
+ public:
+  void* allocate(size_t size) override {
+    return heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  void deallocate(void* pointer) override { heap_caps_free(pointer); }
+  void* reallocate(void* pointer, size_t size) override {
+    return heap_caps_realloc(pointer, size,
+                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+};
+
+PsramJsonAllocator& psramJsonAllocator() {
+  static PsramJsonAllocator allocator;
+  return allocator;
+}
+
+combined_config::ImportBundle* allocateImportBundle(
+    combined_config::ImportBundle*& bundle) {
+  if (bundle != nullptr) return bundle;
+  void* memory = heap_caps_malloc(sizeof(combined_config::ImportBundle),
+                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (memory != nullptr) {
+    bundle = new (memory) combined_config::ImportBundle();
+  }
+  return bundle;
+}
+
 [[noreturn]] void halt(const char* reason);
+bool saveMeteoConfigFromWeb(const char* json, size_t length);
+const char* resetReasonText();
 
 bool beginConfigurationStorageWrite() {
   if (configurationStorageDepth > 0) {
@@ -178,6 +215,247 @@ size_t writeJsonDocument(const JsonDocument& document, char* out,
   if (required == 0 || required >= capacity) return 0;
   const size_t written = serializeJson(document, out, capacity);
   return written == required ? written : 0;
+}
+
+const char* webModeText() {
+  switch (web_host::mode()) {
+    case web_host::MODE_ALWAYS: return "always";
+    case web_host::MODE_DISABLED: return "disabled";
+    case web_host::MODE_TIMED:
+    default: return "timed";
+  }
+}
+
+void addMemorySnapshot(JsonObject out, const NetworkMemorySnapshot& memory) {
+  out["internalFree"] = memory.internalFree;
+  out["internalLargest"] = memory.internalLargest;
+  out["psramFree"] = memory.psramFree;
+  out["psramLargest"] = memory.psramLargest;
+}
+
+void addNetworkDiagnostic(JsonObject out, NetworkDiagnosticKind kind) {
+  const NetworkDiagnosticSnapshot snapshot = networkDiagnosticsSnapshot(kind);
+  out["attempts"] = snapshot.attempts;
+  out["successes"] = snapshot.successes;
+  out["failures"] = snapshot.failures;
+  out["lastResult"] = snapshot.lastResult;
+  out["lastStartedAt"] = snapshot.lastStartedAt;
+  out["lastFinishedAt"] = snapshot.lastFinishedAt;
+  addMemorySnapshot(out["before"].to<JsonObject>(), snapshot.before);
+  addMemorySnapshot(out["after"].to<JsonObject>(), snapshot.after);
+  out["detail"] = snapshot.detail;
+}
+
+size_t loadCombinedStatusForWeb(char* out, size_t capacity) {
+  JsonDocument document(&psramJsonAllocator());
+  document["ok"] = true;
+  document["configurationAvailable"] = web_host::active();
+  document["webMode"] = webModeText();
+  document["uptimeMs"] = millis();
+  document["wifiConnected"] = network_host::connected();
+  document["wifiRssi"] = network_host::connected() ? WiFi.RSSI() : 0;
+  document["ipAddress"] = network_host::ipAddress();
+  const ScreenModule* active = screenManager.active();
+  document["activeScreen"] = active != nullptr ? active->id() : "";
+  const NetworkMemorySnapshot memory = networkDiagnosticsCurrentMemory();
+  addMemorySnapshot(document["memory"].to<JsonObject>(), memory);
+  return writeJsonDocument(document, out, capacity);
+}
+
+size_t loadCombinedDiagnosticsForWeb(char* out, size_t capacity) {
+  JsonDocument document(&psramJsonAllocator());
+  document["ok"] = true;
+  document["configurationAvailable"] = web_host::active();
+  document["webMode"] = webModeText();
+  document["uptimeMs"] = millis();
+  document["chipModel"] = ESP.getChipModel();
+  document["chipRevision"] = ESP.getChipRevision();
+  document["cpuFrequencyMHz"] = ESP.getCpuFreqMHz();
+  document["flashSize"] = ESP.getFlashChipSize();
+  document["psramSize"] = ESP.getPsramSize();
+  document["wifiConnected"] = network_host::connected();
+  document["wifiRssi"] = network_host::connected() ? WiFi.RSSI() : 0;
+  document["ipAddress"] = network_host::ipAddress();
+  document["displayForcedOff"] = displayHostForcedOff();
+  document["resetReason"] = resetReasonText();
+
+  const ScreenModule* active = screenManager.active();
+  document["activeScreen"] = active != nullptr ? active->id() : "";
+  JsonArray screens = document["screens"].to<JsonArray>();
+  for (uint8_t index = 0; index < appConfig.screenCount; ++index) {
+    JsonObject screen = screens.add<JsonObject>();
+    screen["id"] = appConfig.screens[index].id;
+    screen["enabled"] = appConfig.screens[index].enabled != 0;
+  }
+
+  const NetworkMemorySnapshot memory = networkDiagnosticsCurrentMemory();
+  addMemorySnapshot(document["currentMemory"].to<JsonObject>(), memory);
+  JsonObject network = document["network"].to<JsonObject>();
+  addNetworkDiagnostic(network["homeAssistantRuntime"].to<JsonObject>(),
+                       NetworkDiagnosticKind::HomeAssistantRuntime);
+  addNetworkDiagnostic(network["homeAssistantTest"].to<JsonObject>(),
+                       NetworkDiagnosticKind::HomeAssistantTest);
+  addNetworkDiagnostic(network["weatherAnimation"].to<JsonObject>(),
+                       NetworkDiagnosticKind::WeatherAnimation);
+  addNetworkDiagnostic(network["openMeteoRuntime"].to<JsonObject>(),
+                       NetworkDiagnosticKind::OpenMeteoRuntime);
+  addNetworkDiagnostic(network["openMeteoTest"].to<JsonObject>(),
+                       NetworkDiagnosticKind::OpenMeteoTest);
+
+  char status[64];
+  JsonObject meteo = document["meteo"].to<JsonObject>();
+  Status_Text(ST_ADSB, status, sizeof(status));
+  meteo["adsb"] = status;
+  Status_Text(ST_RADAR, status, sizeof(status));
+  meteo["radar"] = status;
+  Status_Text(ST_FORECAST, status, sizeof(status));
+  meteo["forecast"] = status;
+  return writeJsonDocument(document, out, capacity);
+}
+
+size_t writeMeteoBackupJson(char* out, size_t capacity) {
+  JsonDocument document(&psramJsonAllocator());
+  document["lat"] = Settings_Lat();
+  document["lon"] = Settings_Lon();
+  document["hasLoc"] = Settings_HasLocation();
+  document["lang"] = Settings_Language();
+  document["metric"] = Settings_MetricUnits();
+  document["radarSrc"] = Settings_RadarSource();
+  document["topBearing"] = Settings_TopBearing();
+  document["altMin"] = Settings_AltMinFt();
+  document["altMax"] = Settings_AltMaxFt();
+  document["onlyCallsign"] = Settings_OnlyWithCallsign();
+  document["squawkAlert"] = Settings_SquawkAlert();
+  document["watch"] = Settings_WatchCallsign();
+  return writeJsonDocument(document, out, capacity);
+}
+
+size_t loadCombinedExportForWeb(char* out, size_t capacity) {
+  static char* meteoJson = nullptr;
+  if (meteoJson == nullptr) {
+    meteoJson = static_cast<char*>(
+        heap_caps_malloc(2048, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  }
+  if (meteoJson == nullptr) return 0;
+  const size_t meteoLength =
+      writeMeteoBackupJson(meteoJson, 2048);
+  if (meteoLength == 0) return 0;
+  return combined_config::writeExport(appConfig, clockConfig, meteoJson,
+                                      meteoLength, out, capacity);
+}
+
+bool validateCombinedConfigFromWeb(const char* json, size_t length,
+                                   char* message, size_t messageCapacity) {
+  combinedImportValidated = false;
+  combined_config::ImportBundle* bundle =
+      allocateImportBundle(pendingCombinedImport);
+  if (bundle == nullptr) {
+    if (message != nullptr && messageCapacity > 0) {
+      snprintf(message, messageCapacity,
+               "Pro obnovu konfigurace není dostatek PSRAM.");
+    }
+    return false;
+  }
+  if (!combined_config::parseImport(json, length, clockConfig, *bundle,
+                                    message, messageCapacity)) {
+    return false;
+  }
+  combinedImportValidated = true;
+  return true;
+}
+
+bool importCombinedConfigFromWeb(const char*, size_t, char* message,
+                                 size_t messageCapacity) {
+  combined_config::ImportBundle* bundle = pendingCombinedImport;
+  if (!combinedImportValidated || bundle == nullptr) {
+    snprintf(message, messageCapacity,
+             "Konfigurace nebyla před zápisem ověřena.");
+    return false;
+  }
+  combinedImportValidated = false;
+
+  combined_config::ImportBundle* previous =
+      allocateImportBundle(previousCombinedConfig);
+  if (previous == nullptr) {
+    snprintf(message, messageCapacity,
+             "Pro bezpečnou obnovu není dostatek PSRAM.");
+    return false;
+  }
+  previous->appConfig = appConfig;
+  previous->clockConfig = clockConfig;
+  previous->meteoHasLocation = Settings_HasLocation();
+  previous->meteoJsonLength = writeMeteoBackupJson(
+      previous->meteoJson, sizeof(previous->meteoJson));
+  if (previous->meteoJsonLength == 0) {
+    snprintf(message, messageCapacity,
+             "Současné Meteo nastavení nelze zazálohovat pro návrat.");
+    return false;
+  }
+
+  const auto rollback = [&]() {
+    bool restored = true;
+    if (!appConfigSave(previous->appConfig)) restored = false;
+    appConfig = previous->appConfig;
+    if (!clockConfigSave(previous->clockConfig)) restored = false;
+    clockConfig = previous->clockConfig;
+    webConfigApplyPending = true;
+    webConfigApplyAt = millis() + 250;
+    if (!saveMeteoConfigFromWeb(previous->meteoJson,
+                                previous->meteoJsonLength)) {
+      restored = false;
+    }
+    if (!previous->meteoHasLocation && !meteo_settings::clearLocation()) {
+      restored = false;
+    }
+    meteoConfigApplyPending = true;
+    return restored;
+  };
+
+  if (!appConfigSave(bundle->appConfig)) {
+    snprintf(message, messageCapacity,
+             "Nastavení pořadí obrazovek se nepodařilo uložit.");
+    return false;
+  }
+  appConfig = bundle->appConfig;
+
+  if (!saveClockConfigFromWeb(bundle->clockConfig, false)) {
+    const bool restored = rollback();
+    snprintf(message, messageCapacity,
+             restored ? "Nastavení hodin se nepodařilo uložit; původní stav byl obnoven."
+                      : "Obnova selhala a návrat původního stavu nebyl úplný.");
+    return false;
+  }
+  if (!saveMeteoConfigFromWeb(bundle->meteoJson, bundle->meteoJsonLength)) {
+    const bool restored = rollback();
+    snprintf(message, messageCapacity,
+             restored ? "Nastavení MeteoPlaneRadar se nepodařilo uložit; původní stav byl obnoven."
+                      : "Obnova selhala a návrat původního stavu nebyl úplný.");
+    return false;
+  }
+  if (!bundle->meteoHasLocation && !meteo_settings::clearLocation()) {
+    const bool restored = rollback();
+    snprintf(message, messageCapacity,
+             restored ? "Stav polohy Meteo se nepodařilo uložit; původní stav byl obnoven."
+                      : "Obnova selhala a návrat původního stavu nebyl úplný.");
+    return false;
+  }
+
+  meteoConfigApplyPending = true;
+  snprintf(message, messageCapacity,
+           "Záloha byla obnovena. Citlivé přístupové údaje zůstaly beze změny.");
+  return true;
+}
+
+app_core::CombinedWebRoutes makeCombinedWebRoutes() {
+  app_core::CombinedWebRoutes routes;
+  routes.loadStatus = loadCombinedStatusForWeb;
+  routes.loadDiagnostics = loadCombinedDiagnosticsForWeb;
+  routes.loadExport = loadCombinedExportForWeb;
+  routes.validateImport = validateCombinedConfigFromWeb;
+  routes.importConfig = importCombinedConfigFromWeb;
+  routes.storageBegin = beginConfigurationStorageWrite;
+  routes.storageEnd = endConfigurationStorageWrite;
+  return routes;
 }
 
 size_t loadMeteoConfigForWeb(char* out, size_t capacity) {
@@ -486,7 +764,7 @@ void setup() {
           loadSunTransitionTimes, requestDayNightRefresh, loadDayNightStatus,
           setDisplayForcedOff, displayIsForcedOff,
           beginConfigurationStorageWrite, endConfigurationStorageWrite,
-          makeMeteoWebRoutes())) {
+          makeMeteoWebRoutes(), makeCombinedWebRoutes())) {
     Serial.println("Warning: web host initialization failed");
   }
 

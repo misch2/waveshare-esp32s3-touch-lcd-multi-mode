@@ -19,6 +19,10 @@ void setStorageCallbacks(StorageBeginCallback beginCallback,
 app_core::MeteoRadarConfig radarConfig();
 void stepRadarRange(int step);
 
+// Preserve the upstream "location not configured" state during a combined
+// restore without clearing unrelated Meteo credentials or settings.
+bool clearLocation();
+
 // Flushes the upstream debounced UI-state writes when they become due.
 void loop();
 

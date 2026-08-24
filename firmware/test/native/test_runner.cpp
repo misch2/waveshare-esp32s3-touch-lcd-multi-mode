@@ -1,4 +1,5 @@
 #include "AppConfig.h"
+#include "CombinedWebRoutes.h"
 #include "ConfigurationWebRoutes.h"
 #include "DayNightLogic.h"
 #include "HomeAssistantBatchPolicy.h"
@@ -366,6 +367,140 @@ bool meteoScreenCommandForTest(
     const app_core::MeteoWebScreenCommand& command) {
   return command.kind == app_core::MeteoWebScreenCommandKind::Range &&
          command.value == 1;
+}
+
+std::size_t combinedJsonLoadForTest(char* out, std::size_t capacity) {
+  constexpr char kPayload[] = "{\"ok\":true}";
+  constexpr std::size_t kPayloadLength = sizeof(kPayload) - 1;
+  if (out == nullptr || capacity <= kPayloadLength) return 0;
+  std::memcpy(out, kPayload, sizeof(kPayload));
+  return kPayloadLength;
+}
+
+int combinedImportCallCount = 0;
+const char* combinedImportJson = nullptr;
+std::size_t combinedImportLength = 0;
+std::size_t combinedImportMessageCapacity = 0;
+
+bool combinedImportForTest(const char* json, std::size_t length,
+                           char* message, std::size_t messageCapacity) {
+  ++combinedImportCallCount;
+  combinedImportJson = json;
+  combinedImportLength = length;
+  combinedImportMessageCapacity = messageCapacity;
+
+  constexpr char kDetail[] = "restored";
+  constexpr std::size_t kDetailLength = sizeof(kDetail) - 1;
+  if (json == nullptr || message == nullptr ||
+      messageCapacity <= kDetailLength) {
+    return false;
+  }
+  std::memcpy(message, kDetail, sizeof(kDetail));
+  return true;
+}
+
+bool combinedAccessAllowedForTest() { return true; }
+
+void testCombinedWebRoutesDefaultsAndCallbacks() {
+  using app_core::CombinedWebOptions;
+  using app_core::CombinedWebRoutes;
+
+  CHECK_STREQ(app_core::COMBINED_WEB_STATUS_PATH, "/api/status");
+  CHECK_STREQ(app_core::COMBINED_WEB_DIAGNOSTICS_PATH, "/api/diagnostics");
+  CHECK_STREQ(app_core::COMBINED_WEB_EXPORT_PATH, "/api/config/export");
+  CHECK_STREQ(app_core::COMBINED_WEB_IMPORT_PATH, "/api/config/import");
+  CHECK_EQ(app_core::COMBINED_WEB_MAX_IMPORT_BYTES, 16384u);
+
+  const CombinedWebRoutes defaults;
+  CHECK(defaults.loadStatus == nullptr);
+  CHECK(defaults.loadDiagnostics == nullptr);
+  CHECK(defaults.loadExport == nullptr);
+  CHECK(defaults.validateImport == nullptr);
+  CHECK(defaults.importConfig == nullptr);
+  CHECK(defaults.accessAllowed == nullptr);
+  CHECK(defaults.storageBegin == nullptr);
+  CHECK(defaults.storageEnd == nullptr);
+  CHECK(!defaults.hasStatusCallback());
+  CHECK(!defaults.hasDiagnosticsCallback());
+  CHECK(!defaults.hasExportCallback());
+  CHECK(!defaults.hasImportValidationCallback());
+  CHECK(!defaults.hasImportCallback());
+  CHECK(!defaults.hasStorageCallbacks());
+
+  CombinedWebRoutes routes;
+  routes.loadStatus = combinedJsonLoadForTest;
+  routes.loadDiagnostics = combinedJsonLoadForTest;
+  routes.loadExport = combinedJsonLoadForTest;
+  routes.validateImport = combinedImportForTest;
+  routes.importConfig = combinedImportForTest;
+  routes.accessAllowed = combinedAccessAllowedForTest;
+  routes.storageBegin = configurationStorageBeginForTest;
+  routes.storageEnd = configurationStorageEndForTest;
+
+  CHECK(routes.loadStatus == combinedJsonLoadForTest);
+  CHECK(routes.loadDiagnostics == combinedJsonLoadForTest);
+  CHECK(routes.loadExport == combinedJsonLoadForTest);
+  CHECK(routes.validateImport == combinedImportForTest);
+  CHECK(routes.importConfig == combinedImportForTest);
+  CHECK(routes.accessAllowed == combinedAccessAllowedForTest);
+  CHECK(routes.storageBegin == configurationStorageBeginForTest);
+  CHECK(routes.storageEnd == configurationStorageEndForTest);
+  CHECK(routes.hasStatusCallback());
+  CHECK(routes.hasDiagnosticsCallback());
+  CHECK(routes.hasExportCallback());
+  CHECK(routes.hasImportValidationCallback());
+  CHECK(routes.hasImportCallback());
+  CHECK(routes.hasStorageCallbacks());
+
+  char output[32] = {};
+  const std::size_t statusLength = routes.loadStatus(output, sizeof(output));
+  CHECK_EQ(statusLength, std::strlen("{\"ok\":true}"));
+  CHECK_STREQ(output, "{\"ok\":true}");
+  std::memset(output, 0, sizeof(output));
+  CHECK_EQ(routes.loadDiagnostics(output, sizeof(output)), statusLength);
+  CHECK_STREQ(output, "{\"ok\":true}");
+  std::memset(output, 0, sizeof(output));
+  CHECK_EQ(routes.loadExport(output, sizeof(output)), statusLength);
+  CHECK_STREQ(output, "{\"ok\":true}");
+  CHECK(routes.accessAllowed());
+
+  constexpr char kImport[] = "{\"schemaVersion\":1}";
+  char detail[32] = {};
+  combinedImportCallCount = 0;
+  combinedImportJson = nullptr;
+  combinedImportLength = 0;
+  combinedImportMessageCapacity = 0;
+  CHECK(routes.importConfig(kImport, sizeof(kImport) - 1, detail,
+                            sizeof(detail)));
+  CHECK_EQ(combinedImportCallCount, 1);
+  CHECK(combinedImportJson == kImport);
+  CHECK_EQ(combinedImportLength, sizeof(kImport) - 1);
+  CHECK_EQ(combinedImportMessageCapacity, sizeof(detail));
+  CHECK_STREQ(detail, "restored");
+  std::memset(detail, 0, sizeof(detail));
+  CHECK(routes.validateImport(kImport, sizeof(kImport) - 1, detail,
+                              sizeof(detail)));
+  CHECK_STREQ(detail, "restored");
+  CHECK(routes.storageBegin());
+  CHECK(!routes.storageEnd());
+
+  // The compatibility alias must expose the same callback DTO and helpers.
+  CombinedWebOptions options;
+  options.loadStatus = routes.loadStatus;
+  options.loadDiagnostics = routes.loadDiagnostics;
+  options.loadExport = routes.loadExport;
+  options.validateImport = routes.validateImport;
+  options.importConfig = routes.importConfig;
+  options.accessAllowed = routes.accessAllowed;
+  options.storageBegin = routes.storageBegin;
+  options.storageEnd = routes.storageEnd;
+  CHECK(options.hasStatusCallback());
+  CHECK(options.hasDiagnosticsCallback());
+  CHECK(options.hasExportCallback());
+  CHECK(options.hasImportValidationCallback());
+  CHECK(options.hasImportCallback());
+  CHECK(options.hasStorageCallbacks());
+  CHECK(options.accessAllowed());
 }
 
 void testConfigurationWebRoutesDefaultsAndCallbacks() {
@@ -986,6 +1121,7 @@ int main() {
   testDayNightOffsetsAndTransitions();
   testHomeAssistantStoredTokenReusePolicy();
   testHomeAssistantBatchPolicy();
+  testCombinedWebRoutesDefaultsAndCallbacks();
   testConfigurationWebRoutesDefaultsAndCallbacks();
   testMeteoWebRoutesDefaultsAndCallbacks();
   testMeteoRadarConfigDefaultsAndRangePolicy();

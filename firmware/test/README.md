@@ -1,9 +1,15 @@
 # Native app-core tests
 
 `native/test_runner.cpp` is a small dependency-free C++ runner for the host-side
-configuration, module-local Meteo radar DTO, clock and Meteo web-route DTOs,
-gesture, and screen-navigation contracts. It does not require Arduino, LVGL,
-Wi-Fi, or a connected display.
+configuration, combined export/import and diagnostics route DTO, module-local
+Meteo radar DTO, clock and Meteo web-route DTOs, gesture, and screen-navigation
+contracts. It does not require Arduino, LVGL, Wi-Fi, or a connected display.
+
+The combined web-route tests cover the canonical status, diagnostics, export
+and import paths, the bounded 16 KiB import limit, default null callbacks and
+helper results, callback assignment and invocation (including the import detail
+buffer, validation/apply phases and storage callbacks), and the `CombinedWebOptions` compatibility
+alias. Firmware update routes are intentionally absent from this contract.
 
 The web-route tests cover the combined Meteo defaults (`/meteo/` and
 `/api/modules/meteo`), disabled legacy aliases and lifecycle/update flags,
