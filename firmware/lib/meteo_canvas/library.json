@@ -1,0 +1,10 @@
+{
+  "name": "meteo_canvas",
+  "version": "0.1.0",
+  "build": {
+    "includeDir": "include"
+  },
+  "dependencies": {
+    "moononournation/GFX Library for Arduino": "1.6.6"
+  }
+}

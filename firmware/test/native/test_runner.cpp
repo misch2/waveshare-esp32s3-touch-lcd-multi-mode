@@ -58,11 +58,13 @@ void testAppConfigDefaults() {
 
   CHECK(config.validate());
   CHECK_EQ(config.schemaVersion, AppConfig::kSchemaVersion);
-  CHECK_EQ(config.screenCount, 2);
+  CHECK_EQ(config.screenCount, 3);
   CHECK_STREQ(config.screens[0].id, "clock.dashboard");
   CHECK_STREQ(config.screens[1].id, "meteo.radar");
+  CHECK_STREQ(config.screens[2].id, "meteo.forecast");
   CHECK(config.isEnabled("clock.dashboard"));
   CHECK(config.isEnabled("meteo.radar"));
+  CHECK(config.isEnabled("meteo.forecast"));
 }
 
 void testAppConfigNormalizesAndPreservesOrder() {
@@ -85,13 +87,15 @@ void testAppConfigNormalizesAndPreservesOrder() {
   CHECK(config.normalize());
   CHECK(config.validate());
   CHECK_EQ(config.schemaVersion, AppConfig::kSchemaVersion);
-  CHECK_EQ(config.screenCount, 3);
+  CHECK_EQ(config.screenCount, 4);
   CHECK_STREQ(config.screens[0].id, "clock.dashboard");
   CHECK_STREQ(config.screens[1].id, "extra.screen");
   CHECK_STREQ(config.screens[2].id, "meteo.radar");
+  CHECK_STREQ(config.screens[3].id, "meteo.forecast");
   CHECK_EQ(config.screens[0].enabled, 1);
   CHECK_EQ(config.screens[1].enabled, 0);
   CHECK_EQ(config.screens[2].enabled, 1);
+  CHECK_EQ(config.screens[3].enabled, 1);
 }
 
 void testAppConfigFallbackAndEditing() {
@@ -103,9 +107,10 @@ void testAppConfigFallbackAndEditing() {
 
   CHECK(config.normalize());
   CHECK(config.validate());
-  CHECK_EQ(config.screenCount, 2);
+  CHECK_EQ(config.screenCount, 3);
   CHECK_STREQ(config.screens[0].id, "clock.dashboard");
   CHECK_STREQ(config.screens[1].id, "meteo.radar");
+  CHECK_STREQ(config.screens[2].id, "meteo.forecast");
 
   CHECK(config.setEnabled("meteo.radar", false));
   CHECK(!config.isEnabled("meteo.radar"));
@@ -123,6 +128,7 @@ void testAppConfigKeepsOneScreenReachable() {
   AppConfig config = AppConfig::defaults();
   config.screens[0].enabled = 0;
   config.screens[1].enabled = 0;
+  config.screens[2].enabled = 0;
   CHECK(!config.validate());
   CHECK(config.normalize());
   CHECK(config.validate());
@@ -457,29 +463,26 @@ class RecordingModule final : public ScreenModule {
 
 void testScreenManagerNavigationAndDispatch() {
   AppConfig config = AppConfig::defaults();
-  config.screenCount = 3;
-  std::strcpy(config.screens[2].id, "meteo.extra");
-  config.screens[2].enabled = 1;
   CHECK(config.validate());
 
   RecordingModule clock("clock.dashboard");
   RecordingModule radar("meteo.radar");
-  RecordingModule extra("meteo.extra");
+  RecordingModule forecast("meteo.forecast");
   RecordingModule unknown("not.registered");
   ScreenManager manager(config);
 
   CHECK(manager.add(clock));
   CHECK(manager.add(radar));
-  CHECK(manager.add(extra));
+  CHECK(manager.add(forecast));
   CHECK(!manager.add(radar));
-  CHECK(!manager.add(unknown));
-  CHECK_EQ(manager.moduleCount(), 3);
+  CHECK(manager.add(unknown));
+  CHECK_EQ(manager.moduleCount(), 4);
 
   CHECK(manager.begin());
   CHECK(manager.active() == &clock);
   CHECK_EQ(clock.beginCount, 1);
   CHECK_EQ(radar.beginCount, 1);
-  CHECK_EQ(extra.beginCount, 1);
+  CHECK_EQ(forecast.beginCount, 1);
   CHECK_EQ(clock.showCount, 1);
 
   GestureEvent left{};
@@ -504,29 +507,35 @@ void testScreenManagerNavigationAndDispatch() {
   CHECK(manager.dispatch(right));
   CHECK(manager.active() == &clock);
 
-  CHECK(manager.showById("meteo.extra"));
-  CHECK(manager.active() == &extra);
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &radar);
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &forecast);
+  CHECK(manager.showById("meteo.forecast"));
+  CHECK(manager.active() == &forecast);
   CHECK(!manager.showById("not.registered"));
 
   config.setEnabled("meteo.radar", false);
   CHECK(manager.showById("clock.dashboard"));
-  CHECK(manager.step(1));  // radar is skipped; the next enabled module is extra
-  CHECK(manager.active() == &extra);
+  CHECK(manager.step(1));  // radar is skipped; the next enabled module is forecast
+  CHECK(manager.active() == &forecast);
 
-  CHECK(manager.showById("meteo.extra"));
-  CHECK(manager.active() == &extra);
+  CHECK(manager.showById("meteo.forecast"));
+  CHECK(manager.active() == &forecast);
   manager.tick(1234);
-  CHECK_EQ(extra.tickCount, 1);
-  CHECK_EQ(extra.lastTickMs, 1234);
+  CHECK_EQ(forecast.tickCount, 1);
+  CHECK_EQ(forecast.lastTickMs, 1234);
 }
 
 void testScreenManagerTickNeverChangesScreen() {
   AppConfig config = AppConfig::defaults();
   RecordingModule clock("clock.dashboard");
   RecordingModule radar("meteo.radar");
+  RecordingModule forecast("meteo.forecast");
   ScreenManager manager(config);
   CHECK(manager.add(clock));
   CHECK(manager.add(radar));
+  CHECK(manager.add(forecast));
   CHECK(manager.begin());
   CHECK(manager.active() == &clock);
 
@@ -536,26 +545,35 @@ void testScreenManagerTickNeverChangesScreen() {
   CHECK(manager.active() == &clock);
   CHECK_EQ(clock.tickCount, 3);
   CHECK_EQ(radar.tickCount, 0);
+  CHECK_EQ(forecast.tickCount, 0);
 }
 
 void testScreenManagerUsesConfiguredOrder() {
   AppConfig config = AppConfig::defaults();
-  CHECK(config.moveScreen("meteo.radar", 0));
+  CHECK(config.moveScreen("meteo.forecast", 0));
   RecordingModule clock("clock.dashboard");
   RecordingModule radar("meteo.radar");
+  RecordingModule forecast("meteo.forecast");
   ScreenManager manager(config);
 
   // Registration order deliberately differs from configuration order.
   CHECK(manager.add(clock));
   CHECK(manager.add(radar));
+  CHECK(manager.add(forecast));
   CHECK(manager.begin());
-  CHECK(manager.active() == &radar);
+  CHECK(manager.active() == &forecast);
 
   GestureEvent left{};
   left.kind = GestureKind::HorizontalSwipe;
   left.direction = -1;
   CHECK(manager.dispatch(left));
   CHECK(manager.active() == &clock);
+
+  GestureEvent right{};
+  right.kind = GestureKind::HorizontalSwipe;
+  right.direction = 1;
+  CHECK(manager.dispatch(right));
+  CHECK(manager.active() == &forecast);
 }
 
 void testScreenManagerSkipsDisabledAndUnregisteredEntries() {
@@ -571,17 +589,17 @@ void testScreenManagerSkipsDisabledAndUnregisteredEntries() {
   config.screens[3].enabled = 1;
   std::strcpy(config.screens[4].id, "module.unregistered.after");
   config.screens[4].enabled = 1;
-  std::strcpy(config.screens[5].id, "meteo.extra");
+  std::strcpy(config.screens[5].id, "meteo.forecast");
   config.screens[5].enabled = 1;
   CHECK(config.validate());
 
   RecordingModule clock("clock.dashboard");
   RecordingModule radar("meteo.radar");
-  RecordingModule extra("meteo.extra");
+  RecordingModule forecast("meteo.forecast");
   ScreenManager manager(config);
   CHECK(manager.add(clock));
   CHECK(manager.add(radar));
-  CHECK(manager.add(extra));
+  CHECK(manager.add(forecast));
   CHECK(manager.begin());
   CHECK(manager.active() == &clock);
 
@@ -589,28 +607,31 @@ void testScreenManagerSkipsDisabledAndUnregisteredEntries() {
   left.kind = GestureKind::HorizontalSwipe;
   left.direction = -1;
   CHECK(manager.dispatch(left));
-  CHECK(manager.active() == &extra);
+  CHECK(manager.active() == &forecast);
   CHECK_EQ(clock.hideCount, 1);
-  CHECK_EQ(extra.showCount, 1);
+  CHECK_EQ(forecast.showCount, 1);
 
   GestureEvent right{};
   right.kind = GestureKind::HorizontalSwipe;
   right.direction = 1;
   CHECK(manager.dispatch(right));
   CHECK(manager.active() == &clock);
-  CHECK_EQ(extra.hideCount, 1);
+  CHECK_EQ(forecast.hideCount, 1);
   CHECK_EQ(clock.showCount, 2);
 }
 
 void testScreenManagerDoesNotSelfSwitchWithOneEnabledScreen() {
   AppConfig config = AppConfig::defaults();
   CHECK(config.setEnabled("meteo.radar", false));
+  CHECK(config.setEnabled("meteo.forecast", false));
 
   RecordingModule clock("clock.dashboard");
   RecordingModule radar("meteo.radar");
+  RecordingModule forecast("meteo.forecast");
   ScreenManager manager(config);
   CHECK(manager.add(clock));
   CHECK(manager.add(radar));
+  CHECK(manager.add(forecast));
   CHECK(manager.begin());
   CHECK(manager.active() == &clock);
 
@@ -627,15 +648,19 @@ void testScreenManagerDoesNotSelfSwitchWithOneEnabledScreen() {
   CHECK_EQ(clock.hideCount, hideCount);
   CHECK_EQ(radar.showCount, 0);
   CHECK_EQ(radar.hideCount, 0);
+  CHECK_EQ(forecast.showCount, 0);
+  CHECK_EQ(forecast.hideCount, 0);
 }
 
 void testScreenManagerKeepsLocalGesturesLocal() {
   AppConfig config = AppConfig::defaults();
   RecordingModule clock("clock.dashboard");
   RecordingModule radar("meteo.radar");
+  RecordingModule forecast("meteo.forecast");
   ScreenManager manager(config);
   CHECK(manager.add(clock));
   CHECK(manager.add(radar));
+  CHECK(manager.add(forecast));
   CHECK(manager.begin());
   CHECK(manager.showById("meteo.radar"));
 

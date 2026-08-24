@@ -28,8 +28,8 @@ source dependencies, not the application entry points.
 
 Pinned revisions at the time this prototype was created:
 
-- `MeteoPlaneRadar`: `792ef8d05b0900a81e0f49697b8e72220a89f4a7`
-- `waveshare-hodiny`: `9537a76932fc9269b2a22a5fb90a62785897c680`
+- `MeteoPlaneRadar`: `dd77fefd33d6adfa9498a745299e54004cea5694`
+- `waveshare-hodiny`: `e1a66810aba21504cf14c239022620e595430f83`
 
 The technical prototype has been compiled, uploaded and smoke-tested on the
 physical display. The following are verified:
@@ -64,14 +64,19 @@ physical display. The following are verified:
   the combined build. The web and on-device configuration must not expose or
   enable them; combined-firmware updates are manual;
 - `meteo.radar` now compiles the original `ScreenWeather`, CHMI and RainViewer
-  data/rendering path into a host-owned RGB565 canvas which LVGL presents; the
-  combined firmware build passes, but real data, colours, animation, memory
-  headroom and both radar sources still require a physical smoke test;
+  data/rendering path into a host-owned RGB565 canvas which LVGL presents. CHMI
+  data, colours, animation, memory headroom and vertical range gestures have
+  passed a physical smoke test; RainViewer still requires a separate test;
+- `meteo.forecast` compiles the original `Forecast`, `ScreenForecast` and
+  `WxIcon` implementations and shares the same host-owned canvas with radar.
+  Its Open-Meteo forecast and air-quality requests are serialized with other
+  module TLS work and run only while the screen is active; physical verification
+  is still required;
 - the common landing page and clock module are connected; the Meteo web module
   is not connected yet.
 
-Do not extend the remaining demo radar into a parallel production
-implementation. Replace it by adapting the proven upstream functionality.
+Do not add parallel demo implementations for remaining screens. Adapt the
+proven upstream functionality instead.
 
 ## Non-negotiable architecture
 
@@ -117,11 +122,11 @@ Current IDs:
 
 - `clock.dashboard`
 - `meteo.radar`
+- `meteo.forecast`
 
 Expected future IDs include, as applicable:
 
 - `meteo.planes`
-- `meteo.forecast`
 - other IDs in the owning module's namespace
 
 The compile-time registry in `ScreenManager` is sufficient for this embedded
@@ -227,6 +232,14 @@ path. It owns only the host PSRAM canvas, LVGL image bridge and shared fetch-gat
 lifecycle; `ScreenWeather`, CHMI/RainViewer downloads, PNG parsing, crop/map
 rendering and overlays remain upstream-owned. Do not move those implementations
 back into the host module.
+
+`ForecastScreen` reuses the original `Forecast`, `ScreenForecast` and `WxIcon`
+sources through thin translation units. Radar and forecast share the one
+`meteo_canvas` RGB565 PSRAM surface because only the active screen may render.
+The forecast adapter holds `network_host::FetchLease` around the complete
+upstream fetch/parse batch and uses a host-side data signature to invalidate the
+LVGL image when air-quality or pollen values change, which the pinned upstream
+screen tick does not observe by itself.
 
 The combined Arduino-ESP32 3.3.11 build pins Arduino_GFX 1.6.6, because the
 upstream standalone pin 1.4.9 predates the framework's changed SPI API. This is
@@ -478,17 +491,16 @@ the Home Assistant stored-token URL reuse policy used by the web flow.
 1. Upstream the current provenance-marked `ClockDataService` extraction into
    `waveshare-hodiny`, then replace the extracted source with a thin forwarding
    wrapper like the other upstream adapters.
-2. Commit the verified `ConfigurationWeb` route/capability seam and advance the
-   `waveshare-hodiny` submodule pointer.
-3. Physically verify the real CHMI and RainViewer radar adapter, including
-   RGB565 colours, first-load/refresh animation, PSRAM headroom, horizontal
-   screen navigation and vertical range gestures.
-4. Add the remaining Meteo screens as separate stable-ID modules.
-5. Mount the adapted original Meteo configuration page under its module prefix
+2. Physically verify the real CHMI and RainViewer radar adapter, including
+   RainViewer data, first-load/refresh animation and memory headroom; CHMI and
+   the interaction path have already passed.
+3. Physically verify `meteo.forecast`, then add the remaining Meteo screens
+   (starting with planes) as separate stable-ID modules.
+4. Mount the adapted original Meteo configuration page under its module prefix
    and connect it from the existing common landing page.
-6. Add combined configuration export/import and diagnostics. Keep firmware
+5. Add combined configuration export/import and diagnostics. Keep firmware
    updates manual-only.
-7. Add regression tests and repeat the hardware smoke test after every phase.
+6. Add regression tests and repeat the hardware smoke test after every phase.
 
 At every phase, prefer a thin wrapper over an imitation of behavior that is
 already implemented and tested upstream.

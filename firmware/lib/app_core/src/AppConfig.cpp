@@ -7,6 +7,7 @@ namespace {
 
 constexpr char kClockScreenId[] = "clock.dashboard";
 constexpr char kRadarScreenId[] = "meteo.radar";
+constexpr char kForecastScreenId[] = "meteo.forecast";
 
 std::size_t boundedLength(const char* text, std::size_t limit) {
     if (text == nullptr) {
@@ -70,6 +71,18 @@ void clearScreen(AppConfig::Screen& screen) {
     std::memset(&screen, 0, sizeof(screen));
 }
 
+bool appendEnabledScreen(AppConfig::Screen* screens, std::uint8_t& count,
+                         const char* id) {
+    for (std::uint8_t i = 0; i < count; ++i) {
+        if (sameId(screens[i].id, id)) return false;
+    }
+    if (count >= AppConfig::kMaxScreens) return false;
+    copyId(screens[count].id, id);
+    screens[count].enabled = 1;
+    ++count;
+    return true;
+}
+
 bool sameScreen(const AppConfig::Screen& left,
                 const AppConfig::Screen& right) {
     return std::memcmp(&left, &right, sizeof(AppConfig::Screen)) == 0;
@@ -87,12 +100,14 @@ constexpr std::size_t AppConfig::kScreenIdStorage;
 AppConfig AppConfig::defaults() {
     AppConfig config{};
     config.schemaVersion = kSchemaVersion;
-    config.screenCount = 2;
+    config.screenCount = 3;
 
     copyId(config.screens[0].id, kClockScreenId);
     config.screens[0].enabled = 1;
     copyId(config.screens[1].id, kRadarScreenId);
     config.screens[1].enabled = 1;
+    copyId(config.screens[2].id, kForecastScreenId);
+    config.screens[2].enabled = 1;
 
     for (std::uint8_t i = config.screenCount; i < kMaxScreens; ++i) {
         clearScreen(config.screens[i]);
@@ -144,7 +159,23 @@ bool AppConfig::normalize() {
         normalized[0].enabled = 1;
         copyId(normalized[1].id, kRadarScreenId);
         normalized[1].enabled = 1;
-        normalizedCount = 2;
+        copyId(normalized[2].id, kForecastScreenId);
+        normalized[2].enabled = 1;
+        normalizedCount = 3;
+        changed = true;
+    }
+
+    // A missing built-in means an older host schema (or manually truncated
+    // JSON), not an intentional disable: disabled screens remain present with
+    // enabled=0. Append newly introduced modules without disturbing existing
+    // order or forward-compatible unknown IDs.
+    if (appendEnabledScreen(normalized, normalizedCount, kClockScreenId)) {
+        changed = true;
+    }
+    if (appendEnabledScreen(normalized, normalizedCount, kRadarScreenId)) {
+        changed = true;
+    }
+    if (appendEnabledScreen(normalized, normalizedCount, kForecastScreenId)) {
         changed = true;
     }
 

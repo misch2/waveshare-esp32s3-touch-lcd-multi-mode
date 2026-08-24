@@ -5,9 +5,7 @@
 ScreenManager::ScreenManager(app_core::AppConfig& config) : config_(config) {}
 
 bool ScreenManager::add(ScreenModule& module) {
-  if (count_ >= kMaxModules || config_.findScreen(module.id()) < 0) {
-    return false;
-  }
+  if (count_ >= kMaxModules) return false;
   for (size_t i = 0; i < count_; ++i) {
     if (std::strcmp(modules_[i]->id(), module.id()) == 0) return false;
   }

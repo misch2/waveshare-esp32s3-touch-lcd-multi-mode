@@ -49,10 +49,16 @@ Implemented screens:
   range changes retain the original debounced `planeradar` NVS state. This path
   has passed a physical CHMI smoke test; RainViewer still needs a separate
   physical smoke test.
+- `meteo.forecast` wraps the pinned MeteoPlaneRadar `Forecast`,
+  `ScreenForecast` and `WxIcon` implementations. It uses the same shared
+  480x480 canvas as radar, retains the original Open-Meteo forecast and
+  air-quality parsing, and performs network work only while visible under the
+  common fetch lease. Its hardware smoke test is still pending.
 
-The host configuration is stored as versioned JSON in NVS. Schema 2 uses stable
+The host configuration is stored as versioned JSON in NVS. Schema 3 uses stable
 screen IDs, enabled flags and configured order, always keeps at least one
-screen reachable, and deliberately removes the former timed rotation setting.
+screen reachable, appends newly introduced built-in screens without disturbing
+an existing order, and deliberately omits timed rotation.
 Clock settings retain the original binary schema, checksum,
 migrations and dedicated `clockcfg` partition. The combined partition table
 retains two application slots for safe manual firmware deployment, but the
@@ -83,10 +89,16 @@ settings store. `meteo_settings` compiles the pinned upstream `Settings` and
 language implementations through thin translation units. Runtime NVS writes
 use the same display stop/recreate transaction as clock configuration writes.
 A host-owned fetch mutex now serializes the existing clock data worker and the
-CHMI/RainViewer clients so multiple TLS sessions cannot compete for the
-ESP32-S3 internal heap. A CHMI download owns the lease for its complete frame
-batch. RainViewer owns it for the active incremental tile burst and releases
-both the lease and reusable TLS connection when the screen is hidden.
+CHMI/RainViewer/Open-Meteo clients so multiple TLS sessions cannot compete for
+the ESP32-S3 internal heap. A CHMI download owns the lease for its complete
+frame batch. RainViewer owns it for the active incremental tile burst and
+releases both the lease and reusable TLS connection when the screen is hidden.
+Forecast owns it for each complete upstream request-and-parse batch.
+
+Radar and forecast share one host-owned `meteo_canvas` PSRAM allocation and
+select its presentation callback from their `show()`/`hide()` lifecycle. This
+keeps the upstream global `gfx` contract intact without allocating another
+roughly 460 kB surface or introducing another panel flush owner.
 
 The standalone Meteo build retains Arduino_GFX 1.4.9 through its own sketch
 profile. The combined firmware pins Arduino_GFX 1.6.6 because its Arduino-ESP32

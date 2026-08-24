@@ -9,6 +9,7 @@
 #include "ClockDataService.h"
 #include "ClockScreen.h"
 #include "DisplayHost.h"
+#include "ForecastScreen.h"
 #include "GestureRecognizer.h"
 #include "HomeAssistantConnectionPolicy.h"
 #include "I2C_Driver.h"
@@ -38,6 +39,7 @@ bool allowClockDashboardShortClick();
 ClockScreen clockScreen(clockConfig, previewClockBrightness, openClockSettings,
                         allowClockDashboardShortClick);
 RadarScreen radarScreen;
+ForecastScreen forecastScreen;
 GestureEvent pendingGesture;
 bool gesturePending = false;
 bool clockTimeWasSynchronized = false;
@@ -213,7 +215,8 @@ void setup() {
   meteo_settings::setStorageCallbacks(beginConfigurationStorageWrite,
                                       endConfigurationStorageWrite);
   displayHostSetBrightness(clockConfig.dayBrightness);
-  if (!screenManager.add(clockScreen) || !screenManager.add(radarScreen)) {
+  if (!screenManager.add(clockScreen) || !screenManager.add(radarScreen) ||
+      !screenManager.add(forecastScreen)) {
     halt("screen registration failed");
   }
   if (!screenManager.begin()) halt("screen init failed");

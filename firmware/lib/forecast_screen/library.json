@@ -1,6 +1,6 @@
 {
-  "name": "radar_screen",
-  "version": "0.2.0",
+  "name": "forecast_screen",
+  "version": "0.1.0",
   "build": {
     "includeDir": "include"
   },
@@ -8,7 +8,6 @@
     "lvgl/lvgl": "8.3.10",
     "bblanchon/ArduinoJson": "7.1.0",
     "moononournation/GFX Library for Arduino": "1.6.6",
-    "bitbank2/PNGdec": "1.0.1",
     "WiFi": "*",
     "NetworkClientSecure": "*",
     "HTTPClient": "*",
@@ -16,6 +15,7 @@
     "display_host": "*",
     "meteo_canvas": "*",
     "meteo_settings": "*",
-    "network_host": "*"
+    "network_host": "*",
+    "radar_screen": "*"
   }
 }

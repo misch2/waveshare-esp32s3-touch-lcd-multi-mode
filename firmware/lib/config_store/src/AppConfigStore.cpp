@@ -39,8 +39,8 @@ bool appConfigLoad(app_core::AppConfig& config) {
   const bool migrated = loaded.normalize();
   if (!loaded.validate()) return false;
   config = loaded;
-  // Schema 2 deliberately removed timed screen rotation. Rewrite older host
-  // JSON once so the obsolete setting cannot reappear after a later update.
+  // Rewrite normalized host JSON once so schema migrations (including removal
+  // of timed rotation and addition of newly registered built-ins) persist.
   if (migrated) appConfigSave(config);
   return true;
 }

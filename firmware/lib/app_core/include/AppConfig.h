@@ -12,7 +12,7 @@ namespace app_core {
  * desktop build without Arduino headers.
  */
 struct AppConfig {
-    static constexpr std::uint16_t kSchemaVersion = 2;
+    static constexpr std::uint16_t kSchemaVersion = 3;
     static constexpr std::uint8_t kMaxScreens = 8;
     static constexpr std::size_t kMaxScreenIdLength = 31;
     static constexpr std::size_t kScreenIdStorage = kMaxScreenIdLength + 1;

@@ -1,8 +1,6 @@
 #include "RadarScreen.h"
 
 #include <Arduino.h>
-#include <Arduino_GFX_Library.h>
-#include <esp_heap_caps.h>
 
 #ifdef BOOT_PIN
 #undef BOOT_PIN
@@ -11,6 +9,7 @@
 #include "CHMU.h"
 #include "DisplayHost.h"
 #include "MeteoSettingsAdapter.h"
+#include "MeteoCanvas.h"
 #include "Net.h"
 #include "NetworkFetchGate.h"
 #include "NetworkHost.h"
@@ -19,112 +18,7 @@
 #include "UI.h"
 
 namespace {
-constexpr int16_t kDisplayWidth = 480;
-constexpr int16_t kDisplayHeight = 480;
 constexpr uint32_t kRangeFeedbackDurationMs = 900;
-
-class HostRadarCanvas final : public Arduino_GFX {
- public:
-  HostRadarCanvas() : Arduino_GFX(kDisplayWidth, kDisplayHeight) {}
-
-  ~HostRadarCanvas() override {
-    if (frameBuffer_ != nullptr) heap_caps_free(frameBuffer_);
-  }
-
-  bool begin(int32_t speed = GFX_NOT_DEFINED) override {
-    (void)speed;
-    if (frameBuffer_ == nullptr) {
-      frameBuffer_ = static_cast<uint16_t*>(heap_caps_malloc(
-          static_cast<size_t>(WIDTH) * HEIGHT * sizeof(uint16_t),
-          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    }
-    return frameBuffer_ != nullptr;
-  }
-
-  uint16_t* getFramebuffer() { return frameBuffer_; }
-
-  void setPresentCallback(void (*callback)()) { presentCallback_ = callback; }
-
-  void flush(bool forceFlush = false) override {
-    (void)forceFlush;
-    if (presentCallback_ != nullptr) presentCallback_();
-  }
-
-  void writePixelPreclipped(int16_t x, int16_t y,
-                            uint16_t color) override {
-    if (frameBuffer_ == nullptr || x < 0 || x >= WIDTH || y < 0 ||
-        y >= HEIGHT) {
-      return;
-    }
-    frameBuffer_[static_cast<int32_t>(y) * WIDTH + x] = color;
-  }
-
-  void writeFastVLine(int16_t x, int16_t y, int16_t height,
-                      uint16_t color) override {
-    if (frameBuffer_ == nullptr || height == 0) return;
-    if (height < 0) {
-      y += height + 1;
-      height = -height;
-    }
-    if (x < 0 || x >= WIDTH || y >= HEIGHT || y + height <= 0) return;
-    if (y < 0) {
-      height += y;
-      y = 0;
-    }
-    if (y + height > HEIGHT) height = HEIGHT - y;
-    uint16_t* pixel = frameBuffer_ + static_cast<int32_t>(y) * WIDTH + x;
-    while (height-- > 0) {
-      *pixel = color;
-      pixel += WIDTH;
-    }
-  }
-
-  void writeFastHLine(int16_t x, int16_t y, int16_t width,
-                      uint16_t color) override {
-    if (frameBuffer_ == nullptr || width == 0) return;
-    if (width < 0) {
-      x += width + 1;
-      width = -width;
-    }
-    if (y < 0 || y >= HEIGHT || x >= WIDTH || x + width <= 0) return;
-    if (x < 0) {
-      width += x;
-      x = 0;
-    }
-    if (x + width > WIDTH) width = WIDTH - x;
-    uint16_t* pixel = frameBuffer_ + static_cast<int32_t>(y) * WIDTH + x;
-    while (width-- > 0) *pixel++ = color;
-  }
-
-  void writeFillRectPreclipped(int16_t x, int16_t y, int16_t width,
-                               int16_t height, uint16_t color) override {
-    if (frameBuffer_ == nullptr || width <= 0 || height <= 0) return;
-    if (x < 0) {
-      width += x;
-      x = 0;
-    }
-    if (y < 0) {
-      height += y;
-      y = 0;
-    }
-    if (x + width > WIDTH) width = WIDTH - x;
-    if (y + height > HEIGHT) height = HEIGHT - y;
-    if (width <= 0 || height <= 0) return;
-
-    uint16_t* row = frameBuffer_ + static_cast<int32_t>(y) * WIDTH + x;
-    for (int16_t rowIndex = 0; rowIndex < height; ++rowIndex) {
-      uint16_t* pixel = row;
-      for (int16_t column = 0; column < width; ++column) *pixel++ = color;
-      row += WIDTH;
-    }
-  }
-
- private:
-  uint16_t* frameBuffer_ = nullptr;
-  void (*presentCallback_)() = nullptr;
-};
-
-HostRadarCanvas radarCanvas;
 
 void pollDuringMeteoTransfer() {
   // Upstream CHMI downloads are deliberately synchronous. Keep the sole host
@@ -136,23 +30,17 @@ void pollDuringMeteoTransfer() {
 }
 }  // namespace
 
-// The upstream renderers intentionally share one Arduino_GFX target. In the
-// combined firmware that target is an off-screen PSRAM canvas, never the panel.
-Arduino_GFX* gfx = nullptr;
-
 RadarScreen* RadarScreen::instance_ = nullptr;
 
 bool RadarScreen::begin() {
   if (instance_ != nullptr) return false;
   instance_ = this;
 
-  if (!radarCanvas.begin()) {
+  if (!meteo_canvas::begin()) {
     Serial.println("Error: Meteo radar canvas allocation failed");
     instance_ = nullptr;
     return false;
   }
-  radarCanvas.setPresentCallback(&RadarScreen::presentFromCanvas);
-  gfx = &radarCanvas;
 
   screen_ = lv_obj_create(nullptr);
   if (screen_ == nullptr) return false;
@@ -165,13 +53,14 @@ bool RadarScreen::begin() {
   if (image_ == nullptr) return false;
 
   imageDescriptor_.header.always_zero = 0;
-  imageDescriptor_.header.w = kDisplayWidth;
-  imageDescriptor_.header.h = kDisplayHeight;
+  imageDescriptor_.header.w = meteo_canvas::kWidth;
+  imageDescriptor_.header.h = meteo_canvas::kHeight;
   imageDescriptor_.header.cf = LV_IMG_CF_TRUE_COLOR;
   imageDescriptor_.data_size =
-      static_cast<uint32_t>(kDisplayWidth) * kDisplayHeight * sizeof(uint16_t);
+      static_cast<uint32_t>(meteo_canvas::kWidth) * meteo_canvas::kHeight *
+      sizeof(uint16_t);
   imageDescriptor_.data = reinterpret_cast<const uint8_t*>(
-      radarCanvas.getFramebuffer());
+      meteo_canvas::framebuffer());
   lv_img_set_src(image_, &imageDescriptor_);
   lv_obj_center(image_);
   lv_obj_clear_flag(image_, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
@@ -207,12 +96,14 @@ bool RadarScreen::begin() {
 
 void RadarScreen::show() {
   visible_ = true;
+  meteo_canvas::setPresentCallback(&RadarScreen::presentFromCanvas);
   ScreenWeather_Enter();
   render();
   if (screen_ != nullptr) lv_scr_load(screen_);
 }
 
 void RadarScreen::hide() {
+  meteo_canvas::clearPresentCallback();
   visible_ = false;
   hideRangeFeedback();
   ScreenWeather_Leave();
