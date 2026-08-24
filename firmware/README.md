@@ -24,7 +24,10 @@ Implemented screens:
   host-owned HTTP server exposes a common landing page at
   `http://waveshare-hodiny.local/`, while the original clock configuration,
   authentication and diagnostics are mounted at
-  `http://waveshare-hodiny.local/clock/` with namespaced API routes.
+  `http://waveshare-hodiny.local/clock/` with namespaced API routes. Automatic
+  firmware discovery and installation are deliberately disabled in the
+  combined build; updates are performed manually by flashing a locally built
+  image.
 - `meteo.radar` is a lightweight LVGL radar demonstrator. It proves vertical
   range gestures and host navigation, but does not yet download or render the
   MeteoPlaneRadar data.
@@ -33,7 +36,9 @@ The host configuration is stored as versioned JSON in NVS. It uses stable
 screen IDs, enabled flags and configured order, and always keeps at least one
 screen reachable. Clock settings retain the original binary schema, checksum,
 migrations and dedicated `clockcfg` partition. The combined partition table
-retains standard OTA offsets.
+retains two application slots for safe manual firmware deployment, but the
+running firmware does not contact a release server or expose an automatic
+update action.
 
 Build from this directory with `pio run`. The first build may need to download
 LVGL 8.3.10. This is deliberately a hardware prototype, not yet a replacement
@@ -43,8 +48,9 @@ Validated output is written to
 `.pio/build/waveshare-prototype/firmware.factory.bin`. The original display and
 gesture prototype, persisted clock settings, Wi-Fi and SNTP were hardware-
 tested. Real Home Assistant values and the on-device settings overlay were also
-verified. The HTTP configuration server, persistence and resulting display
-updates were verified on the physical device as well.
+verified. The host landing page, prefixed clock routes, HTTP configuration
+persistence and resulting display updates were verified on the physical device
+as well.
 
 The clock web module now accepts the host-owned `WebServer`. The combined
 firmware mounts it at `/clock/` and `/api/modules/clock/*`; the standalone clock
@@ -62,9 +68,9 @@ by several rows until another restart. A reset/init of the existing driver also
 failed because it did not stop GDMA or discard the driver's bounce state. The
 current Save transaction therefore deletes the complete RGB driver before NVS,
 then creates a new driver, framebuffers, DMA descriptors and bounce buffers and
-rebinds LVGL afterwards. This full lifecycle passed repeated physical Save
-testing before the web route refactor. Re-test Save and password changes through
-`/clock/`; watch the serial log for `LCD VSYNC timeout during ...` warnings.
+rebinds LVGL afterwards. This full lifecycle, including Save through `/clock/`,
+passed repeated physical testing. Watch the serial log for
+`LCD VSYNC timeout during ...` warnings after future display changes.
 
 The root cause is flash/cache interaction, not the stored values themselves.
 ESP-IDF explicitly states that a PSRAM framebuffer with bounce buffers cannot
@@ -76,8 +82,8 @@ buffers. That avoided the cache-dependent refill ISR, but caused horizontal
 jitter on every refresh, faster on the radar screen, so the experiment was
 reverted. The proven normal-redraw baseline remains the upstream 20-line bounce
 buffer with 8 MHz PCLK and the VSYNC flush gate. Only configuration persistence
-uses the full delete/recreate transaction. Codex intentionally did not compile
-these changes.
+uses the full delete/recreate transaction. The combined PlatformIO build and
+physical display tests passed with this lifecycle.
 
 The integrated upstream code remains covered by the MIT licenses in the two
 submodules. Preserve both license files when distributing combined binaries.

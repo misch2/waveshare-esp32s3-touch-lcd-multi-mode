@@ -259,6 +259,7 @@ void testConfigurationWebRoutesDefaultsAndCallbacks() {
   CHECK_STREQ(defaults.apiPrefix, CONFIGURATION_WEB_DEFAULT_API_PREFIX);
   CHECK(defaults.registerLegacyAliases);
   CHECK(defaults.manageServerLifecycle);
+  CHECK(defaults.firmwareUpdatesEnabled);
   CHECK(defaults.storageBegin == nullptr);
   CHECK(defaults.storageEnd == nullptr);
 
@@ -267,6 +268,7 @@ void testConfigurationWebRoutesDefaultsAndCallbacks() {
   routes.apiPrefix = "/api/custom-clock";
   routes.registerLegacyAliases = false;
   routes.manageServerLifecycle = false;
+  routes.firmwareUpdatesEnabled = false;
   routes.storageBegin = configurationStorageBeginForTest;
   routes.storageEnd = configurationStorageEndForTest;
 
@@ -274,6 +276,7 @@ void testConfigurationWebRoutesDefaultsAndCallbacks() {
   CHECK_STREQ(routes.apiPrefix, "/api/custom-clock");
   CHECK(!routes.registerLegacyAliases);
   CHECK(!routes.manageServerLifecycle);
+  CHECK(!routes.firmwareUpdatesEnabled);
   CHECK(routes.storageBegin != nullptr);
   CHECK(routes.storageEnd != nullptr);
   CHECK(routes.storageBegin());

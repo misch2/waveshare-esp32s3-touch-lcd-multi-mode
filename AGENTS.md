@@ -55,14 +55,16 @@ physical display. The following are verified:
 - the original clock web UI is compiled behind the sole host-owned server on
   port 80. The host landing page is mounted at `/`, the clock page at
   `/clock/`, and its API at `/api/modules/clock/*`;
-- the previous compatibility bridge at `/` and `/api/*`, including HTTP access,
-  configuration loading/saving and resulting display changes, was verified on
-  the physical device. The new prefixed host routes still require a physical
-  smoke test;
+- the host landing page, `/clock/` page and `/api/modules/clock/*` routes,
+  including HTTP access, configuration loading/saving and resulting display
+  changes, were verified on the physical device;
+- automatic firmware discovery and installation are intentionally disabled in
+  the combined build. The web and on-device configuration must not expose or
+  enable them; combined-firmware updates are manual;
 - `meteo.radar` is a visual/gesture demonstrator and does not use real
   MeteoPlaneRadar network data;
 - the common landing page and clock module are connected; the Meteo web module
-  and production OTA flows are not connected yet.
+  is not connected yet.
 
 Do not extend the remaining demo radar into a parallel production
 implementation. Replace it by adapting the proven upstream functionality.
@@ -178,13 +180,14 @@ Reuse rather than recreate:
 - Home Assistant request/parsing logic and entity mapping;
 - Open-Meteo, weather animation and SNTP/time behavior;
 - the existing configuration page, authentication and form validation;
-- relevant diagnostics and firmware-update behavior after they are moved under
-  the single host server.
+- relevant diagnostics. Firmware update controls remain a standalone-clock
+  feature and must be disabled in the combined host.
 
 `ClockConfigCopyStub.cpp` has been removed; `ClockConfigUpstream.cpp` compiles
-the real upstream schema, checksum, persistence and migrations. The remaining
-`FirmwareUpdateServiceStub.cpp` is a prototype link shim, not an intended
-production replacement. Remove it when host-owned OTA is adapted.
+the real upstream schema, checksum, persistence and migrations.
+`FirmwareUpdateServiceStub.cpp` is a deliberate disabled-service compatibility
+shim: the reused dashboard references the status API, but the combined build
+does not check for or install releases automatically.
 
 `firmware/lib/clock_data_service` is a temporary, provenance-marked extraction
 from the pinned `WaveshareHodiny.ino`. It preserves the upstream HTTP clients,
@@ -272,8 +275,8 @@ layout is:
 - `/meteo/` - adapted original Meteo configuration;
 - `/api/modules/clock/...` - clock API namespace;
 - `/api/modules/meteo/...` - Meteo API namespace;
-- host-wide status, restart, export/import and OTA routes where only one owner
-  is meaningful.
+- host-wide status, restart and export/import routes where only one owner is
+  meaningful.
 
 Both upstream projects currently use conflicting routes such as `/`,
 `/api/config` and `/api/status`. Change the route prefix/base URL in adapters
@@ -439,16 +442,15 @@ the Home Assistant stored-token URL reuse policy used by the web flow.
 1. Upstream the current provenance-marked `ClockDataService` extraction into
    `waveshare-hodiny`, then replace the extracted source with a thin forwarding
    wrapper like the other upstream adapters.
-2. Physically verify the new host landing page, `/clock/` routes,
-   authentication, configuration Save and control endpoints; then commit the
-   small upstream `ConfigurationWeb` route seam and advance the submodule
-   pointer.
+2. Commit the verified `ConfigurationWeb` route/capability seam and advance the
+   `waveshare-hodiny` submodule pointer.
 3. Replace the radar demonstrator with the real Meteo data/cache/rendering
    adapter while retaining vertical range gestures.
 4. Add the remaining Meteo screens as separate stable-ID modules.
 5. Mount the adapted original Meteo configuration page under its module prefix
    and connect it from the existing common landing page.
-6. Add combined configuration export/import, diagnostics and host-owned OTA.
+6. Add combined configuration export/import and diagnostics. Keep firmware
+   updates manual-only.
 7. Add regression tests and repeat the hardware smoke test after every phase.
 
 At every phase, prefer a thin wrapper over an imitation of behavior that is

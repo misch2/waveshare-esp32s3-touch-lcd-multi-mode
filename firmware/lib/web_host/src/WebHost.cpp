@@ -32,6 +32,7 @@ bool begin(ClockConfigLoadCallback loadCallback,
   routes.apiPrefix = CONFIGURATION_WEB_DEFAULT_API_PREFIX;
   routes.registerLegacyAliases = false;
   routes.manageServerLifecycle = false;
+  routes.firmwareUpdatesEnabled = false;
   routes.storageBegin = storageBeginCallback;
   routes.storageEnd = storageEndCallback;
 

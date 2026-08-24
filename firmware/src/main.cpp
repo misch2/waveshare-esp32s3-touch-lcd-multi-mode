@@ -166,6 +166,12 @@ void setup() {
       Serial.println("Warning: clock configuration invalid; using defaults");
     }
   }
+  if (clockConfig.automaticFirmwareUpdate) {
+    clockConfig.automaticFirmwareUpdate = false;
+    if (clockStorageReady && !clockConfigSave(clockConfig)) {
+      Serial.println("Warning: automatic firmware updates could not be disabled in storage");
+    }
+  }
 
   // Finish all host-owned first-boot NVS reads and possible default writes
   // before RGB scanout starts. Bounce-buffer refill reads from PSRAM and is not

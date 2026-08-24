@@ -118,6 +118,10 @@ void ClockScreen::saveSettings(
     uint8_t dayBrightness, uint8_t nightBrightness, bool automaticDayNight,
     bool secondRingEnabled, uint8_t secondEffect, bool animatedWeatherIcons,
     uint8_t weatherIconStyle, bool automaticFirmwareUpdate, uint8_t webMode) {
+  // The combined product is updated by an explicit local flash only. Keep the
+  // upstream callback shape for source compatibility, but never persist or
+  // schedule the standalone clock's release-check policy here.
+  (void)automaticFirmwareUpdate;
   config_.dayBrightness = dayBrightness;
   config_.nightBrightness = nightBrightness;
   config_.automaticDayNight = automaticDayNight;
@@ -125,7 +129,7 @@ void ClockScreen::saveSettings(
   config_.secondEffect = secondEffect;
   config_.animatedWeatherIcons = animatedWeatherIcons;
   config_.weatherIconStyle = weatherIconStyle;
-  config_.automaticFirmwareUpdate = automaticFirmwareUpdate;
+  config_.automaticFirmwareUpdate = false;
   pendingWebMode_ = webMode;
 
   clockDashboardApplyConfiguration(config_);

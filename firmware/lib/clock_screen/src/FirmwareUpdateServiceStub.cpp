@@ -1,5 +1,7 @@
-// The dashboard only reads a snapshot while rendering its settings page.
-// Keep network/OTA implementation out of the combined prototype.
+// Deliberately disabled implementation for the combined product. The upstream
+// dashboard still references the status API, but this firmware is updated only
+// by explicitly flashing a locally built image and must never contact a release
+// service or schedule an installation.
 #include "../../../../waveshare-hodiny/WaveshareHodiny/FirmwareUpdateService.h"
 
 FirmwareUpdateSnapshot firmwareUpdateServiceSnapshot() {
