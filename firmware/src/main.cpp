@@ -82,7 +82,7 @@ constexpr char kClockScreenId[] = "clock.dashboard";
 constexpr char kPlanesScreenId[] = "meteo.planes";
 constexpr char kRadarScreenId[] = "meteo.radar";
 constexpr char kForecastScreenId[] = "meteo.forecast";
-constexpr char kCombinedFirmwareVersion[] = "development";
+constexpr char kCombinedFirmwareVersion[] = "1.0.0";
 
 class PsramJsonAllocator final : public Allocator {
  public:
@@ -783,7 +783,7 @@ void onTouchSample(bool pressed, int16_t x, int16_t y, uint32_t nowMs) {
 void setup() {
   Serial.begin(115200);
   delay(300);
-  Serial.println("Multi-mode screen prototype starting");
+  Serial.println("Multi-mode display v1.0.0 starting");
 
   char firmwareConfirmationMessage[96] = {};
   if (!manual_firmware_update::confirmRunningFirmware(

@@ -91,14 +91,14 @@ jobs:
           firmware/test/native/build/app_core_tests
 
       - name: Build firmware
-        run: pio run -d firmware -e waveshare-prototype
+        run: pio run -d firmware -e waveshare-multi-mode
 
       - name: Prepare release assets
         shell: bash
         run: |
           set -euo pipefail
 
-          build_dir="firmware/.pio/build/waveshare-prototype"
+          build_dir="firmware/.pio/build/waveshare-multi-mode"
           release_dir="release"
           mkdir -p "$release_dir"
 

@@ -1,10 +1,11 @@
-# Multi-mode screen technical prototype
+# Multi-mode Waveshare firmware
 
-This firmware is an integration prototype for the two pinned upstream
-submodules. Small integration seams are kept explicit in those pinned source
-trees. The prototype has one
-LVGL/display/touch owner, a compile-time screen registry, stable screen IDs and
-a central gesture recognizer.
+Current release: **1.0.0**.
+
+This is the combined firmware for the two pinned upstream submodules. Small
+integration seams are kept explicit in those pinned source trees. The firmware
+has one LVGL/display/touch owner, a compile-time screen registry, stable screen
+IDs and a central gesture recognizer.
 
 Current gesture contract:
 
@@ -80,12 +81,13 @@ update action.
 Build from this directory with `pio run`. `platformio.ini` pins PIOArduino
 55.03.311 (Arduino-ESP32 3.3.11 / ESP-IDF 5.5.5), so a clean CI runner uses the
 same framework as the physically verified build. The first build may need to
-download the platform and LVGL 8.3.10. This is deliberately a hardware
-prototype, not yet a replacement for either upstream firmware.
+download the platform and LVGL 8.3.10. This is the standard combined firmware
+for the Waveshare board. The two upstream projects remain standalone source
+dependencies and standalone builds.
 
 Validated output is written to
-`.pio/build/waveshare-prototype/firmware.factory.bin`. The original display and
-gesture prototype, persisted clock settings, Wi-Fi and SNTP were hardware-
+`.pio/build/waveshare-multi-mode/firmware.factory.bin`. The display and gesture
+paths, persisted clock settings, Wi-Fi and SNTP were hardware-
 tested. Real Home Assistant values and the on-device settings overlay were also
 verified. The host landing page, prefixed clock routes, HTTP configuration
 persistence and resulting display updates were verified on the physical device
@@ -121,7 +123,7 @@ and all writes share one display-safe storage transaction.
 Firmware release discovery and installation from a remote download are
 intentionally absent. Manual deployment is available on the common page through `POST
 /api/firmware/upload`: choose the application image
-`.pio/build/waveshare-prototype/firmware.bin` (the standard build artifact may
+`.pio/build/waveshare-multi-mode/firmware.bin` (the standard build artifact may
 be renamed to any filename ending in `.bin`). The filename is not used as an
 identity check: the host validates the ESP32-S3 application header and combined
 identity marker, so `firmware.factory.bin` and other non-combined images are

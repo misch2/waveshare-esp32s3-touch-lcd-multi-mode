@@ -61,17 +61,17 @@ jobs:
           firmware/test/native/build/app_core_tests
 
       - name: Build firmware
-        run: pio run -d firmware -e waveshare-prototype
+        run: pio run -d firmware -e waveshare-multi-mode
 
       - name: Verify firmware images
         shell: bash
         run: |
           set -euo pipefail
-          test -s firmware/.pio/build/waveshare-prototype/firmware.bin
-          test -s firmware/.pio/build/waveshare-prototype/firmware.factory.bin
-          test "$(stat -c%s firmware/.pio/build/waveshare-prototype/firmware.bin)" -le 6291456
+          test -s firmware/.pio/build/waveshare-multi-mode/firmware.bin
+          test -s firmware/.pio/build/waveshare-multi-mode/firmware.factory.bin
+          test "$(stat -c%s firmware/.pio/build/waveshare-multi-mode/firmware.bin)" -le 6291456
           grep -aFq "waveshare-multi-mode-screen:manual-ota:v1" \
-            firmware/.pio/build/waveshare-prototype/firmware.bin
+            firmware/.pio/build/waveshare-multi-mode/firmware.bin
 
       - name: Upload firmware images
         uses: actions/upload-artifact@v4
@@ -79,5 +79,5 @@ jobs:
           name: firmware-${{ github.sha }}
           if-no-files-found: error
           path: |
-            firmware/.pio/build/waveshare-prototype/firmware.bin
-            firmware/.pio/build/waveshare-prototype/firmware.factory.bin
+            firmware/.pio/build/waveshare-multi-mode/firmware.bin
+            firmware/.pio/build/waveshare-multi-mode/firmware.factory.bin

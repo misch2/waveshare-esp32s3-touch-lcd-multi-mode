@@ -26,12 +26,12 @@ UI wherever practical.
 The integration firmware lives in `firmware/`. The two submodules are upstream
 source dependencies, not the application entry points.
 
-Pinned revisions at the time this prototype was created:
+Pinned revisions used by the current release:
 
 - `MeteoPlaneRadar`: `dd77fefd33d6adfa9498a745299e54004cea5694`
 - `waveshare-hodiny`: `e1a66810aba21504cf14c239022620e595430f83`
 
-The technical prototype has been compiled, uploaded and smoke-tested on the
+The release firmware has been compiled, uploaded and smoke-tested on the
 physical display. The following are verified:
 
 - ESP32-S3 boots normally;
@@ -277,7 +277,7 @@ detail consumes the first horizontal or vertical swipe and closes, while the
 normal horizontal fallback still switches screens. The pinned `Route_Tick()`
 has no poll hook and can therefore briefly block the UI while its optional
 detail lookup is in progress; preserve
-this upstream behavior for the prototype and prefer a small upstream hook or
+this upstream behavior in the current release and prefer a small upstream hook or
 data-service boundary if it needs improvement.
 
 The combined build pins PIOArduino 55.03.311 (Arduino-ESP32 3.3.11 / ESP-IDF
@@ -553,13 +553,13 @@ All native app-core tests passed
 Build the hardware firmware with:
 
 ```powershell
-pio run -d firmware -e waveshare-prototype
+pio run -d firmware -e waveshare-multi-mode
 ```
 
 The validated factory image is written to:
 
 ```text
-firmware/.pio/build/waveshare-prototype/firmware.factory.bin
+firmware/.pio/build/waveshare-multi-mode/firmware.factory.bin
 ```
 
 Also run `git diff --check` and confirm both submodules have a clean worktree.
