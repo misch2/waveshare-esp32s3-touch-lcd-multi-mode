@@ -3,11 +3,13 @@
 #include "DayNightLogic.h"
 #include "HomeAssistantConnectionPolicy.h"
 #include "GestureRecognizer.h"
+#include "MeteoRadarConfig.h"
 #include "ScreenManager.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 namespace {
 
@@ -290,6 +292,56 @@ void testConfigurationWebRoutesDefaultsAndCallbacks() {
   CHECK(options.storageEnd == configurationStorageEndForTest);
 }
 
+void testMeteoRadarConfigDefaultsAndRangePolicy() {
+  app_core::MeteoRadarConfig config;
+  CHECK(config.validate());
+  CHECK(config.source == app_core::MeteoRadarSource::Chmu);
+  CHECK_EQ(config.rangeIndex,
+           app_core::MeteoRadarConfig::kDefaultRangeIndex);
+  CHECK(config.rangeKm() == 50.0f);
+  CHECK(!config.wholeCountry());
+
+  config.stepRange(1);
+  CHECK(config.rangeKm() == 100.0f);
+  config.stepRange(2);
+  CHECK(config.wholeCountry());
+  config.stepRange(1);
+  CHECK(config.rangeKm() == 25.0f);
+  config.stepRange(-1);
+  CHECK(config.wholeCountry());
+}
+
+void testMeteoRadarConfigNormalization() {
+  app_core::MeteoRadarConfig config;
+  config.latitude = std::numeric_limits<double>::infinity();
+  config.longitude = 999.0;
+  config.source = static_cast<app_core::MeteoRadarSource>(99);
+  config.rangeIndex = 99;
+
+  CHECK(!config.validate());
+  CHECK(config.normalize());
+  CHECK(config.validate());
+  CHECK(config.latitude == app_core::MeteoRadarConfig::kDefaultLatitude);
+  CHECK(config.longitude == app_core::MeteoRadarConfig::kDefaultLongitude);
+  CHECK(config.source == app_core::MeteoRadarSource::Chmu);
+  CHECK_EQ(config.rangeIndex,
+           app_core::MeteoRadarConfig::kDefaultRangeIndex);
+  CHECK(!config.normalize());
+
+  config.latitude = 0.0;
+  config.longitude = 0.0;
+  CHECK(config.normalize());
+  CHECK(config.validate());
+
+  config.latitude = 48.2;
+  config.longitude = 16.37;
+  config.source = app_core::MeteoRadarSource::RainViewer;
+  config.rangeIndex = 4;
+  CHECK(!config.normalize());
+  CHECK(config.validate());
+  CHECK(config.wholeCountry());
+}
+
 GestureEvent recognize(GestureRecognizer& recognizer, bool& recognized,
                        bool pressed, int16_t x, int16_t y, uint32_t nowMs) {
   GestureEvent event;
@@ -303,12 +355,15 @@ void testGestureDirectionsAndDebounce() {
 
   recognize(recognizer, recognized, true, 240, 240, 0);
   recognize(recognizer, recognized, true, 140, 240, 200);
+  CHECK(!recognizer.tapCandidate());
   GestureEvent event = recognize(recognizer, recognized, false, 140, 240, 250);
   CHECK(!recognized);  // release debounce has not elapsed
+  CHECK(!recognizer.tapCandidate());
   event = recognize(recognizer, recognized, false, 140, 240, 261);
   CHECK(recognized);
   CHECK(event.kind == GestureKind::HorizontalSwipe);
   CHECK_EQ(event.direction, -1);  // left = next screen
+  CHECK(!recognizer.tapCandidate());
   CHECK_EQ(event.startX, 240);
   CHECK_EQ(event.endX, 140);
   event = recognize(recognizer, recognized, false, 140, 240, 400);
@@ -344,9 +399,11 @@ void testGestureTapAndLongPress() {
   bool recognized = false;
 
   recognize(recognizer, recognized, true, 100, 100, 0);
+  CHECK(recognizer.tapCandidate());
   GestureEvent event = recognize(recognizer, recognized, false, 105, 102, 60);
   CHECK(recognized);
   CHECK(event.kind == GestureKind::Tap);
+  CHECK(recognizer.tapCandidate());
 
   recognizer.reset();
   recognize(recognizer, recognized, true, 100, 100, 1000);
@@ -354,12 +411,15 @@ void testGestureTapAndLongPress() {
   event = recognize(recognizer, recognized, false, 102, 99, 1660);
   CHECK(recognized);
   CHECK(event.kind == GestureKind::LongPress);
+  CHECK(recognizer.tapCandidate());
 
   recognizer.reset();
   recognize(recognizer, recognized, true, 100, 100, 2000);
   recognize(recognizer, recognized, true, 200, 200, 2200);
+  CHECK(!recognizer.tapCandidate());
   event = recognize(recognizer, recognized, false, 200, 200, 2260);
   CHECK(!recognized);  // too large on both axes to be a tap/long press
+  CHECK(!recognizer.tapCandidate());
 }
 
 class RecordingModule final : public ScreenModule {
@@ -636,6 +696,8 @@ int main() {
   testDayNightOffsetsAndTransitions();
   testHomeAssistantStoredTokenReusePolicy();
   testConfigurationWebRoutesDefaultsAndCallbacks();
+  testMeteoRadarConfigDefaultsAndRangePolicy();
+  testMeteoRadarConfigNormalization();
   testGestureDirectionsAndDebounce();
   testGestureTapAndLongPress();
   testScreenManagerNavigationAndDispatch();

@@ -10,6 +10,7 @@
 
 #include "DayNightLogic.h"
 #include "FirmwareHubCa.h"
+#include "NetworkFetchGate.h"
 #include "NetworkDiagnostics.h"
 
 namespace {
@@ -21,6 +22,7 @@ constexpr uint32_t HOME_ASSISTANT_RESPONSE_TIMEOUT_MS = 8000;
 constexpr uint8_t HOME_ASSISTANT_REQUEST_ATTEMPTS = 2;
 constexpr uint32_t HOME_ASSISTANT_REQUEST_RETRY_DELAY_MS = 250;
 constexpr uint32_t OPEN_METEO_REFRESH_MS = 10UL * 60UL * 1000UL;
+constexpr uint32_t NETWORK_FETCH_GATE_TIMEOUT_MS = 15UL * 1000UL;
 constexpr time_t VALID_TIME_THRESHOLD = 1700000000;
 
 bool extractJsonStringField(const String& payload, const char* key,
@@ -577,7 +579,10 @@ void ClockDataService::workerLoop() {
     }
 
     if (config.dataSource == CLOCK_DATA_SOURCE_OPEN_METEO) {
-      const bool apiResponded = fetchOpenMeteo(config, values);
+      const network_host::FetchLease fetchLease(
+          NETWORK_FETCH_GATE_TIMEOUT_MS);
+      const bool apiResponded =
+          fetchLease && fetchOpenMeteo(config, values);
       if (apiResponded) lastAvailableValues = values;
       publishValues(values);
       ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(
@@ -593,7 +598,12 @@ void ClockDataService::workerLoop() {
       continue;
     }
 
-    const bool apiResponded = fetchHomeAssistantStates(config, values);
+    bool apiResponded = false;
+    {
+      const network_host::FetchLease fetchLease(
+          NETWORK_FETCH_GATE_TIMEOUT_MS);
+      apiResponded = fetchLease && fetchHomeAssistantStates(config, values);
+    }
     values.homeAssistantOnline = apiResponded;
     if (apiResponded) lastAvailableValues = values;
     publishValues(values);
@@ -612,7 +622,11 @@ void ClockDataService::workerLoop() {
       static ClockValues lightValues;
       lightConfig = configSnapshot();
       lightValues = lastAvailableValues;
-      fetchDayNightStates(lightConfig, lightValues);
+      const network_host::FetchLease lightFetchLease(
+          NETWORK_FETCH_GATE_TIMEOUT_MS);
+      if (lightFetchLease) {
+        fetchDayNightStates(lightConfig, lightValues);
+      }
       lastAvailableValues.weatherIsDay = lightValues.weatherIsDay;
       lastAvailableValues.sunStateAvailable = lightValues.sunStateAvailable;
       lastAvailableValues.dayNightLightStateAvailable =

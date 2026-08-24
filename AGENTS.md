@@ -61,8 +61,9 @@ physical display. The following are verified:
 - automatic firmware discovery and installation are intentionally disabled in
   the combined build. The web and on-device configuration must not expose or
   enable them; combined-firmware updates are manual;
-- `meteo.radar` is a visual/gesture demonstrator and does not use real
-  MeteoPlaneRadar network data;
+- `meteo.radar` is still a visual demonstrator and does not use real network
+  frames, but its location/source/range snapshot and debounced range
+  persistence now reuse the pinned MeteoPlaneRadar `Settings` implementation;
 - the common landing page and clock module are connected; the Meteo web module
   is not connected yet.
 
@@ -97,6 +98,11 @@ panel flush owner.
 Network callbacks and background tasks must not draw to the display. They may
 fetch and parse data, then publish a snapshot or event for the active module to
 render from the main/UI context.
+
+All module HTTP clients share `network_host::FetchLease`. A screen/service must
+hold the lease only for its active request batch and release it before sleeping
+or waiting for the next refresh. This prevents concurrent Home Assistant and
+Meteo TLS handshakes from exhausting internal RAM.
 
 ## Screen module contract
 
@@ -151,6 +157,14 @@ The contract is:
 Do not add a second gesture recognizer inside a module. In particular, preserve
 the clock dashboard's tap and long-press semantics through LVGL rather than
 turning them into global navigation.
+
+LVGL emits the dashboard's `LV_EVENT_SHORT_CLICKED` on pointer release before
+the main loop dispatches the completed host gesture. The combined clock adapter
+therefore installs `clockDashboardSetShortClickAllowedCallback()` and allows
+the manual day/night toggle only while `GestureRecognizer::tapCandidate()` is
+true. Keep this narrow filter: it prevents horizontal/vertical swipes from
+toggling night mode while preserving a real tap and LVGL long press. Standalone
+clock firmware leaves the callback null and retains its original behavior.
 
 ## Upstream reuse and adapter policy
 
@@ -241,6 +255,14 @@ Some concepts exist in both projects, for example location, brightness and
 night mode. Do not silently merge fields that currently have different
 semantics or ranges. First define an explicit host meaning and documented
 mapping; otherwise leave the settings module-local.
+
+`MeteoRadarConfig` is a fixed-size runtime snapshot at the module/service
+boundary, not a second persistence format. `firmware/lib/meteo_settings`
+compiles the pinned `Settings.cpp` and `Lang.cpp` through thin translation
+units. The upstream settings storage callbacks must bracket every runtime
+Preferences write with the host display-storage transaction; install them only
+after `DisplayHost` is ready, while initial reads/migrations run before RGB
+scanout starts.
 
 The combined 16 MB partition table is `firmware/partitions.csv`. Preserve the
 standard OTA offsets, the `clockcfg` reservation and the coredump partition when
@@ -400,6 +422,7 @@ g++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/lib/app_core/include `
   -Iwaveshare-hodiny/WaveshareHodiny `
   firmware/lib/app_core/src/AppConfig.cpp `
   firmware/lib/app_core/src/GestureRecognizer.cpp `
+  firmware/lib/app_core/src/MeteoRadarConfig.cpp `
   firmware/lib/app_core/src/ScreenManager.cpp `
   waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp `
   firmware/test/native/test_runner.cpp `

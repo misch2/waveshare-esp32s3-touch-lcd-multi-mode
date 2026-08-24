@@ -21,10 +21,12 @@ const char* kCzechMonths[] = {
 
 ClockScreen::ClockScreen(ClockConfig& config,
                          ClockBrightnessPreviewCallback brightnessPreview,
-                         ClockSettingsOpenCallback settingsOpen)
+                         ClockSettingsOpenCallback settingsOpen,
+                         ClockShortClickAllowedCallback shortClickAllowed)
     : config_(config),
       brightnessPreview_(brightnessPreview),
-      settingsOpen_(settingsOpen) {
+      settingsOpen_(settingsOpen),
+      shortClickAllowed_(shortClickAllowed) {
   callbackTarget = this;
 }
 
@@ -45,6 +47,7 @@ bool ClockScreen::begin() {
                      &ClockScreen::onBrightnessPreview,
                      &ClockScreen::onSettingsOpen,
                      &ClockScreen::onSettingsSave, nullptr, nullptr);
+  clockDashboardSetShortClickAllowedCallback(shortClickAllowed_);
   clockDashboardApplyConfiguration(config_);
   clockDashboardSetWifiConnected(false);
   clockDashboardSetWebActive(false);

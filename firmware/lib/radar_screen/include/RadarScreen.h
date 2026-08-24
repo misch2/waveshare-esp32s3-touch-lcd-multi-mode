@@ -22,7 +22,5 @@ class RadarScreen final : public ScreenModule {
   lv_obj_t* rangeLabel_ = nullptr;
   lv_obj_t* sweepLine_ = nullptr;
   lv_point_t sweepPoints_[2] = {};
-  uint8_t rangeIndex_ = 1;
   uint32_t lastSweepMs_ = 0;
 };
-

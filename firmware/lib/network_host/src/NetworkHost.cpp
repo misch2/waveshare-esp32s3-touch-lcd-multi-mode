@@ -6,6 +6,7 @@
 #include <esp_sntp.h>
 
 #include "ImprovSerialService.h"
+#include "NetworkFetchGate.h"
 #include "WifiProvisioning.h"
 
 namespace network_host {
@@ -56,6 +57,11 @@ void observeConnection() {
 
 bool begin() {
   if (started) return true;
+
+  if (!initializeFetchGate()) {
+    Serial.println("Network: fetch gate allocation failed");
+    return false;
+  }
 
   // These are the pinned waveshare-hodiny provisioning functions. The host
   // owns their lifecycle; no screen module may start another Wi-Fi stack.

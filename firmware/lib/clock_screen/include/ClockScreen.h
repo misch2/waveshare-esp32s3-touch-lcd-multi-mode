@@ -11,6 +11,7 @@ struct ClockConfig;
 struct ClockValues;
 using ClockBrightnessPreviewCallback = void (*)(uint8_t brightness);
 using ClockSettingsOpenCallback = void (*)();
+using ClockShortClickAllowedCallback = bool (*)();
 
 /**
  * Adapter around the pinned waveshare-hodiny dashboard.
@@ -23,7 +24,8 @@ class ClockScreen final : public ScreenModule {
  public:
   explicit ClockScreen(ClockConfig& config,
                        ClockBrightnessPreviewCallback brightnessPreview,
-                       ClockSettingsOpenCallback settingsOpen);
+                       ClockSettingsOpenCallback settingsOpen,
+                       ClockShortClickAllowedCallback shortClickAllowed);
 
   const char* id() const override { return "clock.dashboard"; }
   const char* label() const override { return "Clock"; }
@@ -62,6 +64,7 @@ class ClockScreen final : public ScreenModule {
   ClockConfig& config_;
   ClockBrightnessPreviewCallback brightnessPreview_ = nullptr;
   ClockSettingsOpenCallback settingsOpen_ = nullptr;
+  ClockShortClickAllowedCallback shortClickAllowed_ = nullptr;
   lv_obj_t* screen_ = nullptr;
   lv_obj_t* returnScreen_ = nullptr;
   bool initialized_ = false;

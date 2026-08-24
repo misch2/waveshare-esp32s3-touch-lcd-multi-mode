@@ -12,6 +12,11 @@ Current gesture contract:
   its range);
 - tap and long press: delivered to the active module/LVGL controls.
 
+The clock dashboard additionally filters its manual day/night short-click
+handler through the central recognizer's tap tolerance. This is necessary
+because LVGL reports pointer release before the host dispatches the completed
+swipe; a horizontal screen swipe must not also toggle the clock's night mode.
+
 Implemented screens:
 
 - `clock.dashboard` wraps the actual pinned `waveshare-hodiny` LVGL dashboard,
@@ -28,9 +33,10 @@ Implemented screens:
   firmware discovery and installation are deliberately disabled in the
   combined build; updates are performed manually by flashing a locally built
   image.
-- `meteo.radar` is a lightweight LVGL radar demonstrator. It proves vertical
-  range gestures and host navigation, but does not yet download or render the
-  MeteoPlaneRadar data.
+- `meteo.radar` is still a lightweight LVGL renderer demonstrator and does not
+  yet download precipitation frames. Its location, source and five-step range
+  model now come from the canonical MeteoPlaneRadar `Settings` implementation;
+  vertical range changes use the original debounced `planeradar` NVS state.
 
 The host configuration is stored as versioned JSON in NVS. It uses stable
 screen IDs, enabled flags and configured order, and always keeps at least one
@@ -57,6 +63,15 @@ firmware mounts it at `/clock/` and `/api/modules/clock/*`; the standalone clock
 firmware retains its original `/` and `/api/*` aliases. The original HTML,
 serialization, validation, password/session handling and export/import logic
 remain upstream. Do not mount the colliding Meteo routes unchanged.
+
+The first production Meteo seam is connected independently of rendering.
+`MeteoRadarConfig` is a fixed-size, host-testable snapshot rather than another
+settings store. `meteo_settings` compiles the pinned upstream `Settings` and
+language implementations through thin translation units. Runtime NVS writes
+use the same display stop/recreate transaction as clock configuration writes.
+A host-owned fetch mutex now serializes the existing clock data worker and the
+future CHMI/RainViewer clients so multiple TLS sessions cannot compete for the
+ESP32-S3 internal heap.
 
 The integration display host selects an 8 MHz RGB pixel clock and waits for
 VSYNC before LVGL may reuse a flushed framebuffer. This is intended to prevent

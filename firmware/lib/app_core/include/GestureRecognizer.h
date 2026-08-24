@@ -37,9 +37,15 @@ class GestureRecognizer {
               GestureEvent& event);
   void reset();
 
+  // True while the current/last completed touch stayed within the tap movement
+  // tolerance. UI adapters can use this during their release callback to stop
+  // LVGL interpreting a host-level swipe as a local short click.
+  bool tapCandidate() const { return tapCandidate_; }
+
  private:
   GestureThresholds thresholds_;
   bool touching_ = false;
+  bool tapCandidate_ = true;
   int16_t startX_ = 0;
   int16_t startY_ = 0;
   int16_t lastX_ = 0;
@@ -47,4 +53,3 @@ class GestureRecognizer {
   uint32_t startMs_ = 0;
   uint32_t lastSeenMs_ = 0;
 };
-

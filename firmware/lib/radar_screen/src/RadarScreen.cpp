@@ -4,11 +4,11 @@
 #include <cstdio>
 #include <initializer_list>
 
+#include "MeteoSettingsAdapter.h"
+
 namespace {
 constexpr int kCenterX = 240;
 constexpr int kCenterY = 245;
-constexpr int kRangesKm[] = {25, 50, 100, 200};
-constexpr size_t kRangeCount = sizeof(kRangesKm) / sizeof(kRangesKm[0]);
 constexpr float kPi = 3.14159265358979323846f;
 
 void styleTransparent(lv_obj_t* object) {
@@ -95,16 +95,14 @@ void RadarScreen::tick(uint32_t nowMs) {
 
 bool RadarScreen::handleGesture(const GestureEvent& event) {
   if (event.kind == GestureKind::VerticalSwipe) {
-    if (event.direction < 0 && rangeIndex_ + 1 < kRangeCount) {
-      ++rangeIndex_;
-    } else if (event.direction > 0 && rangeIndex_ > 0) {
-      --rangeIndex_;
-    }
+    // GestureRecognizer reports up as -1. The agreed module policy maps an
+    // upward swipe to the next/wider upstream Meteo range.
+    meteo_settings::stepRadarRange(event.direction < 0 ? 1 : -1);
     updateRange();
     return true;
   }
   if (event.kind == GestureKind::Tap && event.endY > 360) {
-    rangeIndex_ = static_cast<uint8_t>((rangeIndex_ + 1) % kRangeCount);
+    meteo_settings::stepRadarRange(1);
     updateRange();
     return true;
   }
@@ -113,8 +111,13 @@ bool RadarScreen::handleGesture(const GestureEvent& event) {
 
 void RadarScreen::updateRange() {
   if (rangeLabel_ == nullptr) return;
+  const app_core::MeteoRadarConfig config = meteo_settings::radarConfig();
   char text[32];
-  std::snprintf(text, sizeof(text), "ROZSAH  %d km", kRangesKm[rangeIndex_]);
+  if (config.wholeCountry()) {
+    std::snprintf(text, sizeof(text), "ROZSAH  CELA CR");
+  } else {
+    std::snprintf(text, sizeof(text), "ROZSAH  %.0f km", config.rangeKm());
+  }
   lv_label_set_text(rangeLabel_, text);
 }
 

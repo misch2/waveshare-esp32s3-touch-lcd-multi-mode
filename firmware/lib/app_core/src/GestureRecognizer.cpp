@@ -7,6 +7,7 @@ GestureRecognizer::GestureRecognizer(GestureThresholds thresholds)
 
 void GestureRecognizer::reset() {
   touching_ = false;
+  tapCandidate_ = true;
   startX_ = startY_ = lastX_ = lastY_ = 0;
   startMs_ = lastSeenMs_ = 0;
 }
@@ -17,6 +18,7 @@ bool GestureRecognizer::update(bool pressed, int16_t x, int16_t y,
   if (pressed) {
     if (!touching_) {
       touching_ = true;
+      tapCandidate_ = true;
       startX_ = x;
       startY_ = y;
       startMs_ = nowMs;
@@ -24,6 +26,9 @@ bool GestureRecognizer::update(bool pressed, int16_t x, int16_t y,
     lastX_ = x;
     lastY_ = y;
     lastSeenMs_ = nowMs;
+    tapCandidate_ =
+        std::abs(lastX_ - startX_) < thresholds_.tapMovePx &&
+        std::abs(lastY_ - startY_) < thresholds_.tapMovePx;
     return false;
   }
 
@@ -60,6 +65,7 @@ bool GestureRecognizer::update(bool pressed, int16_t x, int16_t y,
 
   const bool smallMove =
       absDx < thresholds_.tapMovePx && absDy < thresholds_.tapMovePx;
+  tapCandidate_ = smallMove;
   if (smallMove && duration >= thresholds_.longPressMs) {
     event.kind = GestureKind::LongPress;
     return true;
@@ -70,4 +76,3 @@ bool GestureRecognizer::update(bool pressed, int16_t x, int16_t y,
   }
   return false;
 }
-

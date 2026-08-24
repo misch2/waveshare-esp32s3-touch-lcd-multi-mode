@@ -1,8 +1,9 @@
 # Native app-core tests
 
 `native/test_runner.cpp` is a small dependency-free C++ runner for the host-side
-configuration, web-route DTO, gesture, and screen-navigation contracts. It does
-not require Arduino, LVGL, Wi-Fi, or a connected display.
+configuration, module-local Meteo radar DTO, web-route DTO, gesture, and
+screen-navigation contracts. It does not require Arduino, LVGL, Wi-Fi, or a
+connected display.
 
 From the repository root, build and run it with:
 
@@ -12,6 +13,7 @@ g++ -std=c++17 -Wall -Wextra -Werror ^
   -Iwaveshare-hodiny/WaveshareHodiny ^
   firmware/lib/app_core/src/AppConfig.cpp ^
   firmware/lib/app_core/src/GestureRecognizer.cpp ^
+  firmware/lib/app_core/src/MeteoRadarConfig.cpp ^
   firmware/lib/app_core/src/ScreenManager.cpp ^
   waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp ^
   firmware/test/native/test_runner.cpp ^

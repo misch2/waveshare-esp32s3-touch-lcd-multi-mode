@@ -12,6 +12,7 @@
 #include "GestureRecognizer.h"
 #include "HomeAssistantConnectionPolicy.h"
 #include "I2C_Driver.h"
+#include "MeteoSettingsAdapter.h"
 #include "NetworkHost.h"
 #include "RadarScreen.h"
 #include "ScreenManager.h"
@@ -32,8 +33,10 @@ void previewClockBrightness(uint8_t brightness) {
   displayHostSetBrightness(brightness);
 }
 void openClockSettings();
+bool allowClockDashboardShortClick();
 
-ClockScreen clockScreen(clockConfig, previewClockBrightness, openClockSettings);
+ClockScreen clockScreen(clockConfig, previewClockBrightness, openClockSettings,
+                        allowClockDashboardShortClick);
 RadarScreen radarScreen;
 GestureEvent pendingGesture;
 bool gesturePending = false;
@@ -122,6 +125,10 @@ void openClockSettings() {
   web_host::ensureActive();
 }
 
+bool allowClockDashboardShortClick() {
+  return gestureRecognizer.tapCandidate();
+}
+
 void applyPendingWebConfiguration(uint32_t nowMs) {
   if (!webConfigApplyPending ||
       static_cast<int32_t>(nowMs - webConfigApplyAt) < 0) {
@@ -182,6 +189,9 @@ void setup() {
       Serial.println("Warning: app configuration could not be persisted");
     }
   }
+  if (!meteo_settings::begin()) {
+    Serial.println("Warning: Meteo settings initialization failed");
+  }
   if (!network_host::begin()) {
     Serial.println("Warning: network host initialization failed");
   }
@@ -200,6 +210,8 @@ void setup() {
   Set_Backlight(clockConfig.dayBrightness);
 
   if (!displayHostBegin(onTouchSample)) halt("display host init failed");
+  meteo_settings::setStorageCallbacks(beginConfigurationStorageWrite,
+                                      endConfigurationStorageWrite);
   displayHostSetBrightness(clockConfig.dayBrightness);
   if (!screenManager.add(clockScreen) || !screenManager.add(radarScreen)) {
     halt("screen registration failed");
@@ -219,6 +231,7 @@ void setup() {
 void loop() {
   network_host::loop();
   displayHostLoop();
+  meteo_settings::loop();
 
   clockScreen.updateNetworkStatus(network_host::connected(),
                                   network_host::ipAddress());

@@ -1,0 +1,11 @@
+{
+  "name": "meteo_settings",
+  "version": "0.1.0",
+  "build": {
+    "includeDir": "include"
+  },
+  "dependencies": {
+    "bblanchon/ArduinoJson": "7.1.0",
+    "Preferences": "*"
+  }
+}
