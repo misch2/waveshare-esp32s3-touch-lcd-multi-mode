@@ -38,9 +38,11 @@ physical display. The following are verified:
 - the ST7701 panel and LVGL framebuffer work;
 - the CST820 touch controller responds (`ChipID 0xb7`, firmware `0x03`);
 - the clock dashboard renders;
-- the radar demonstrator renders;
-- horizontal screen switching, vertical radar range gestures and automatic
-  rotation work and remain stable.
+- the real MeteoPlaneRadar weather renderer loads and displays the CHMI map;
+- horizontal screen switching and vertical radar range gestures work and
+  remain stable; screens change only by swipe, never on a timer.
+- a radar range swipe is acknowledged by a short host-owned LVGL overlay before
+  the upstream renderer performs its potentially slow crop/tile work.
 
 - `clock.dashboard` loads the original `ClockConfig` schema and migrations;
 - the host reuses the upstream `clock-wifi` NVS and Improv Serial provisioning;
@@ -61,9 +63,10 @@ physical display. The following are verified:
 - automatic firmware discovery and installation are intentionally disabled in
   the combined build. The web and on-device configuration must not expose or
   enable them; combined-firmware updates are manual;
-- `meteo.radar` is still a visual demonstrator and does not use real network
-  frames, but its location/source/range snapshot and debounced range
-  persistence now reuse the pinned MeteoPlaneRadar `Settings` implementation;
+- `meteo.radar` now compiles the original `ScreenWeather`, CHMI and RainViewer
+  data/rendering path into a host-owned RGB565 canvas which LVGL presents; the
+  combined firmware build passes, but real data, colours, animation, memory
+  headroom and both radar sources still require a physical smoke test;
 - the common landing page and clock module are connected; the Meteo web module
   is not connected yet.
 
@@ -219,9 +222,19 @@ Reuse rather than recreate:
 - `Settings`, its NVS behavior, JSON mapping and validation;
 - the existing configuration page and operational endpoints.
 
-The current `RadarScreen` is only a host/gesture demonstrator. It must eventually
-be replaced by an adapter around the real Meteo radar data and rendering path,
-not expanded into an independent clone.
+`RadarScreen` is now an adapter around the real Meteo radar data and rendering
+path. It owns only the host PSRAM canvas, LVGL image bridge and shared fetch-gate
+lifecycle; `ScreenWeather`, CHMI/RainViewer downloads, PNG parsing, crop/map
+rendering and overlays remain upstream-owned. Do not move those implementations
+back into the host module.
+
+The combined Arduino-ESP32 3.3.11 build pins Arduino_GFX 1.6.6, because the
+upstream standalone pin 1.4.9 predates the framework's changed SPI API. This is
+a build-tool compatibility difference, not a fork of the renderer API. PNGdec
+stays at 1.0.1; its draw callbacks must retain the declared `void` signature.
+CHMI and RainViewer must keep sharing the header-provided decoder: the two
+sources are mutually exclusive, and two PNG objects consume about 96 kB of
+internal RAM instead of about 48 kB, materially reducing TLS headroom.
 
 ## Configuration ownership and persistence
 
@@ -232,7 +245,6 @@ The host `AppConfig` owns only cross-module concerns such as:
 - schema version;
 - enabled screens;
 - stable screen order;
-- automatic rotation interval;
 - future host-level navigation policy.
 
 It is stored as versioned JSON in the `multi-mode` NVS namespace. Its format
@@ -407,7 +419,7 @@ Update one submodule at a time:
 5. Adjust only the relevant integration adapter or documented patch.
 6. Run native host tests and the combined firmware build.
 7. Flash the physical board and verify display, touch, both swipe directions,
-   module-local gestures, automatic rotation, networking and web configuration.
+   module-local gestures, networking and web configuration.
 8. Record any new compatibility constraint in this file.
 
 Do not update both submodules and the host architecture in one unreviewable
@@ -455,7 +467,8 @@ was done.
 
 Current host tests cover configuration normalization, the at-least-one-screen
 invariant, configured ordering, gesture classification/direction/debounce,
-disabled-screen skipping, screen navigation and automatic rotation. Extend
+disabled-screen skipping, swipe-only screen navigation and the absence of
+timer-driven switching. Extend
 these tests whenever the host contracts change. They also cover the reused
 day/night transition tolerance, offsets and unavailable-data behavior, plus
 the Home Assistant stored-token URL reuse policy used by the web flow.
@@ -467,8 +480,9 @@ the Home Assistant stored-token URL reuse policy used by the web flow.
    wrapper like the other upstream adapters.
 2. Commit the verified `ConfigurationWeb` route/capability seam and advance the
    `waveshare-hodiny` submodule pointer.
-3. Replace the radar demonstrator with the real Meteo data/cache/rendering
-   adapter while retaining vertical range gestures.
+3. Physically verify the real CHMI and RainViewer radar adapter, including
+   RGB565 colours, first-load/refresh animation, PSRAM headroom, horizontal
+   screen navigation and vertical range gestures.
 4. Add the remaining Meteo screens as separate stable-ID modules.
 5. Mount the adapted original Meteo configuration page under its module prefix
    and connect it from the existing common landing page.

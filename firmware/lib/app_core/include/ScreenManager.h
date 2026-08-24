@@ -31,5 +31,4 @@ class ScreenManager {
   ScreenModule* modules_[kMaxModules] = {};
   size_t count_ = 0;
   size_t activeIndex_ = kMaxModules;
-  uint32_t lastRotationMs_ = 0;
 };

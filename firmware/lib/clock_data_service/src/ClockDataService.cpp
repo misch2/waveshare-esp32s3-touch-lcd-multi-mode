@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <esp_heap_caps.h>
 
 #include <cmath>
 #include <cstdio>
@@ -24,6 +25,15 @@ constexpr uint32_t HOME_ASSISTANT_REQUEST_RETRY_DELAY_MS = 250;
 constexpr uint32_t OPEN_METEO_REFRESH_MS = 10UL * 60UL * 1000UL;
 constexpr uint32_t NETWORK_FETCH_GATE_TIMEOUT_MS = 15UL * 1000UL;
 constexpr time_t VALID_TIME_THRESHOLD = 1700000000;
+
+void logNetworkFailure(const char* source, int status) {
+  const uint32_t freeInternal = static_cast<uint32_t>(
+      heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  const uint32_t largestInternal = static_cast<uint32_t>(
+      heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  Serial.printf("Clock data: %s failed (status %d, internal free %u B, largest %u B)\n",
+                source, status, freeInternal, largestInternal);
+}
 
 bool extractJsonStringField(const String& payload, const char* key,
                             String& value);
@@ -97,6 +107,7 @@ bool fetchOpenMeteo(const ClockConfig& config, ClockValues& values) {
     http.end();
   }
   if (status != HTTP_CODE_OK) {
+    logNetworkFailure("Open-Meteo", status);
     networkDiagnosticsEnd(NetworkDiagnosticKind::OpenMeteoRuntime, false,
                           status);
     return false;
@@ -206,6 +217,7 @@ bool requestHomeAssistantState(NetworkClient& client, const ClockConfig& config,
     }
     delay(HOME_ASSISTANT_REQUEST_RETRY_DELAY_MS);
   }
+  logNetworkFailure("Home Assistant", lastStatus);
   return false;
 }
 

@@ -59,7 +59,6 @@ void testAppConfigDefaults() {
   CHECK(config.validate());
   CHECK_EQ(config.schemaVersion, AppConfig::kSchemaVersion);
   CHECK_EQ(config.screenCount, 2);
-  CHECK_EQ(config.autoRotateSeconds, AppConfig::kDefaultAutoRotateSeconds);
   CHECK_STREQ(config.screens[0].id, "clock.dashboard");
   CHECK_STREQ(config.screens[1].id, "meteo.radar");
   CHECK(config.isEnabled("clock.dashboard"));
@@ -70,7 +69,6 @@ void testAppConfigNormalizesAndPreservesOrder() {
   AppConfig config{};
   config.schemaVersion = 99;
   config.screenCount = 6;
-  config.autoRotateSeconds = AppConfig::kMaxAutoRotateSeconds + 1;
 
   std::strcpy(config.screens[0].id, "clock.dashboard");
   config.screens[0].enabled = 1;
@@ -87,7 +85,6 @@ void testAppConfigNormalizesAndPreservesOrder() {
   CHECK(config.normalize());
   CHECK(config.validate());
   CHECK_EQ(config.schemaVersion, AppConfig::kSchemaVersion);
-  CHECK_EQ(config.autoRotateSeconds, AppConfig::kMaxAutoRotateSeconds);
   CHECK_EQ(config.screenCount, 3);
   CHECK_STREQ(config.screens[0].id, "clock.dashboard");
   CHECK_STREQ(config.screens[1].id, "extra.screen");
@@ -523,9 +520,8 @@ void testScreenManagerNavigationAndDispatch() {
   CHECK_EQ(extra.lastTickMs, 1234);
 }
 
-void testScreenManagerAutoRotation() {
+void testScreenManagerTickNeverChangesScreen() {
   AppConfig config = AppConfig::defaults();
-  config.autoRotateSeconds = 1;
   RecordingModule clock("clock.dashboard");
   RecordingModule radar("meteo.radar");
   ScreenManager manager(config);
@@ -534,11 +530,12 @@ void testScreenManagerAutoRotation() {
   CHECK(manager.begin());
   CHECK(manager.active() == &clock);
 
-  manager.tick(1);
-  manager.tick(999);
+  manager.tick(1U);
+  manager.tick(UINT32_MAX - 255U);
+  manager.tick(800U);
   CHECK(manager.active() == &clock);
-  manager.tick(1001);
-  CHECK(manager.active() == &radar);
+  CHECK_EQ(clock.tickCount, 3);
+  CHECK_EQ(radar.tickCount, 0);
 }
 
 void testScreenManagerUsesConfiguredOrder() {
@@ -666,25 +663,6 @@ void testScreenManagerKeepsLocalGesturesLocal() {
   CHECK_EQ(clock.hideCount, clockHideCount);
 }
 
-void testScreenManagerAutoRotationAcrossMillisWrap() {
-  AppConfig config = AppConfig::defaults();
-  config.autoRotateSeconds = 1;
-  RecordingModule clock("clock.dashboard");
-  RecordingModule radar("meteo.radar");
-  ScreenManager manager(config);
-  CHECK(manager.add(clock));
-  CHECK(manager.add(radar));
-  CHECK(manager.begin());
-  CHECK(manager.active() == &clock);
-
-  // The unsigned subtraction in the scheduler must continue to work when
-  // millis() wraps from UINT32_MAX to zero.
-  manager.tick(UINT32_MAX - 255U);
-  CHECK(manager.active() == &clock);
-  manager.tick(800U);  // elapsed time is 1,056 ms across the wrap
-  CHECK(manager.active() == &radar);
-}
-
 }  // namespace
 
 int main() {
@@ -701,12 +679,11 @@ int main() {
   testGestureDirectionsAndDebounce();
   testGestureTapAndLongPress();
   testScreenManagerNavigationAndDispatch();
-  testScreenManagerAutoRotation();
+  testScreenManagerTickNeverChangesScreen();
   testScreenManagerUsesConfiguredOrder();
   testScreenManagerSkipsDisabledAndUnregisteredEntries();
   testScreenManagerDoesNotSelfSwitchWithOneEnabledScreen();
   testScreenManagerKeepsLocalGesturesLocal();
-  testScreenManagerAutoRotationAcrossMillisWrap();
 
   if (failures != 0) {
     std::fprintf(stderr, "%d test assertion(s) failed\n", failures);

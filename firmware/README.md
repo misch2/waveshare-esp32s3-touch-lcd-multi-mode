@@ -1,16 +1,23 @@
 # Multi-mode screen technical prototype
 
 This firmware is an integration prototype for the two pinned upstream
-submodules. The upstream source trees stay unchanged. The prototype has one
+submodules. Small integration seams are kept explicit in those pinned source
+trees. The prototype has one
 LVGL/display/touch owner, a compile-time screen registry, stable screen IDs and
 a central gesture recognizer.
 
 Current gesture contract:
 
 - horizontal swipe: previous/next screen;
-- vertical swipe: delivered to the active module (the radar prototype changes
+- screens never change automatically on a timer;
+- vertical swipe: delivered to the active module (the radar module changes
   its range);
 - tap and long press: delivered to the active module/LVGL controls.
+
+The radar acknowledges a vertical range swipe immediately with a short LVGL
+overlay containing the direction and newly selected range. It is flushed before
+the upstream renderer recalculates its cached crops or starts a RainViewer tile
+burst, so slow data work cannot make a registered gesture look ignored.
 
 The clock dashboard additionally filters its manual day/night short-click
 handler through the central recognizer's tap tolerance. This is necessary
@@ -33,14 +40,20 @@ Implemented screens:
   firmware discovery and installation are deliberately disabled in the
   combined build; updates are performed manually by flashing a locally built
   image.
-- `meteo.radar` is still a lightweight LVGL renderer demonstrator and does not
-  yet download precipitation frames. Its location, source and five-step range
-  model now come from the canonical MeteoPlaneRadar `Settings` implementation;
-  vertical range changes use the original debounced `planeradar` NVS state.
+- `meteo.radar` now wraps the pinned MeteoPlaneRadar `ScreenWeather` renderer,
+  CHMI animation client, RainViewer tile client, PNG decoding, European borders,
+  city labels and source status model. The original renderer draws into a
+  host-owned 480x480 RGB565 PSRAM canvas; LVGL presents that canvas through the
+  sole display pipeline. Its location, source and five-step range model come
+  from the canonical MeteoPlaneRadar `Settings` implementation, and vertical
+  range changes retain the original debounced `planeradar` NVS state. This path
+  has passed a physical CHMI smoke test; RainViewer still needs a separate
+  physical smoke test.
 
-The host configuration is stored as versioned JSON in NVS. It uses stable
-screen IDs, enabled flags and configured order, and always keeps at least one
-screen reachable. Clock settings retain the original binary schema, checksum,
+The host configuration is stored as versioned JSON in NVS. Schema 2 uses stable
+screen IDs, enabled flags and configured order, always keeps at least one
+screen reachable, and deliberately removes the former timed rotation setting.
+Clock settings retain the original binary schema, checksum,
 migrations and dedicated `clockcfg` partition. The combined partition table
 retains two application slots for safe manual firmware deployment, but the
 running firmware does not contact a release server or expose an automatic
@@ -70,8 +83,19 @@ settings store. `meteo_settings` compiles the pinned upstream `Settings` and
 language implementations through thin translation units. Runtime NVS writes
 use the same display stop/recreate transaction as clock configuration writes.
 A host-owned fetch mutex now serializes the existing clock data worker and the
-future CHMI/RainViewer clients so multiple TLS sessions cannot compete for the
-ESP32-S3 internal heap.
+CHMI/RainViewer clients so multiple TLS sessions cannot compete for the
+ESP32-S3 internal heap. A CHMI download owns the lease for its complete frame
+batch. RainViewer owns it for the active incremental tile burst and releases
+both the lease and reusable TLS connection when the screen is hidden.
+
+The standalone Meteo build retains Arduino_GFX 1.4.9 through its own sketch
+profile. The combined firmware pins Arduino_GFX 1.6.6 because its Arduino-ESP32
+3.3.11 framework uses the newer SPI API; the renderer-facing Arduino_GFX API is
+unchanged. PNGdec remains pinned to 1.0.1, and the upstream draw callbacks now
+use that library's declared `void` callback signature. CHMI and RainViewer share
+one decoder because they are mutually exclusive sources. Its roughly 48 kB
+working object is allocated in PSRAM, preserving scarce contiguous internal
+RAM for TLS while keeping the source frame buffers separate.
 
 The integration display host selects an 8 MHz RGB pixel clock and waits for
 VSYNC before LVGL may reuse a flushed framebuffer. This is intended to prevent

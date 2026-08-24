@@ -83,14 +83,11 @@ constexpr std::uint16_t AppConfig::kSchemaVersion;
 constexpr std::uint8_t AppConfig::kMaxScreens;
 constexpr std::size_t AppConfig::kMaxScreenIdLength;
 constexpr std::size_t AppConfig::kScreenIdStorage;
-constexpr std::uint16_t AppConfig::kDefaultAutoRotateSeconds;
-constexpr std::uint16_t AppConfig::kMaxAutoRotateSeconds;
 
 AppConfig AppConfig::defaults() {
     AppConfig config{};
     config.schemaVersion = kSchemaVersion;
     config.screenCount = 2;
-    config.autoRotateSeconds = kDefaultAutoRotateSeconds;
 
     copyId(config.screens[0].id, kClockScreenId);
     config.screens[0].enabled = 1;
@@ -110,11 +107,6 @@ bool AppConfig::normalize() {
         schemaVersion = kSchemaVersion;
         changed = true;
     }
-    if (autoRotateSeconds > kMaxAutoRotateSeconds) {
-        autoRotateSeconds = kMaxAutoRotateSeconds;
-        changed = true;
-    }
-
     const std::uint8_t inputCount =
         screenCount <= kMaxScreens ? screenCount : kMaxScreens;
     Screen normalized[kMaxScreens]{};
@@ -183,8 +175,7 @@ bool AppConfig::normalize() {
 
 bool AppConfig::validate() const {
     if (schemaVersion != kSchemaVersion || screenCount == 0 ||
-        screenCount > kMaxScreens ||
-        autoRotateSeconds > kMaxAutoRotateSeconds) {
+        screenCount > kMaxScreens) {
         return false;
     }
 

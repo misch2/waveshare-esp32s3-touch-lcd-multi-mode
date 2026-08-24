@@ -12,14 +12,10 @@ namespace app_core {
  * desktop build without Arduino headers.
  */
 struct AppConfig {
-    static constexpr std::uint16_t kSchemaVersion = 1;
+    static constexpr std::uint16_t kSchemaVersion = 2;
     static constexpr std::uint8_t kMaxScreens = 8;
     static constexpr std::size_t kMaxScreenIdLength = 31;
     static constexpr std::size_t kScreenIdStorage = kMaxScreenIdLength + 1;
-
-    // Zero disables automatic rotation.  Non-zero values are seconds.
-    static constexpr std::uint16_t kDefaultAutoRotateSeconds = 30;
-    static constexpr std::uint16_t kMaxAutoRotateSeconds = 3600;
 
     struct Screen {
         // A non-empty printable ASCII ID (without whitespace), max 31 chars.
@@ -29,7 +25,6 @@ struct AppConfig {
 
     std::uint16_t schemaVersion;
     std::uint8_t screenCount;
-    std::uint16_t autoRotateSeconds;
     Screen screens[kMaxScreens];
 
     /** Return the initial configuration for a new device. */

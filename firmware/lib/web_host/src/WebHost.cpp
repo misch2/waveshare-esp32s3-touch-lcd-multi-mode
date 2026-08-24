@@ -1,5 +1,6 @@
 #include "WebHost.h"
 
+#include <Preferences.h>
 #include <WebServer.h>
 
 #include "HostWebPage.h"
@@ -7,6 +8,19 @@
 namespace web_host {
 namespace {
 WebServer server(80);
+
+bool ensureClockWebNamespaces() {
+  // The combined host starts its web layer before RGB scanout, so this is the
+  // safe place to create optional namespaces without interrupting the PSRAM
+  // bounce-buffer refill. The upstream clock firmware remains read-only here.
+  constexpr const char* kNamespaces[] = {"web-auth", "web-mode"};
+  for (const char* name : kNamespaces) {
+    Preferences preferences;
+    if (!preferences.begin(name, false, "clockcfg")) return false;
+    preferences.end();
+  }
+  return true;
+}
 
 void handleHostRoot() {
   server.sendHeader(F("Cache-Control"), F("no-store"));
@@ -26,6 +40,8 @@ bool begin(ClockConfigLoadCallback loadCallback,
            DisplayPowerStatusCallback displayPowerStatusCallback,
            StorageBeginCallback storageBeginCallback,
            StorageEndCallback storageEndCallback) {
+  if (!ensureClockWebNamespaces()) return false;
+
   ConfigurationWebRoutes routes;
   routes.webServer = &server;
   routes.pagePath = CONFIGURATION_WEB_DEFAULT_PAGE_PATH;

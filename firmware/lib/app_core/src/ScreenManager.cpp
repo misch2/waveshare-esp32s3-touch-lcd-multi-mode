@@ -40,7 +40,6 @@ bool ScreenManager::showIndex(size_t index) {
   if (activeIndex_ < count_) modules_[activeIndex_]->hide();
   activeIndex_ = index;
   modules_[activeIndex_]->show();
-  lastRotationMs_ = 0;
   return true;
 }
 
@@ -87,16 +86,6 @@ bool ScreenManager::dispatch(const GestureEvent& event) {
 
 void ScreenManager::tick(uint32_t nowMs) {
   if (activeIndex_ < count_) modules_[activeIndex_]->tick(nowMs);
-  if (config_.autoRotateSeconds == 0 || count_ < 2) return;
-  if (lastRotationMs_ == 0) {
-    lastRotationMs_ = nowMs;
-    return;
-  }
-  const uint32_t interval = static_cast<uint32_t>(config_.autoRotateSeconds) * 1000U;
-  if (nowMs - lastRotationMs_ >= interval) {
-    lastRotationMs_ = nowMs;
-    step(1);
-  }
 }
 
 ScreenModule* ScreenManager::active() const {

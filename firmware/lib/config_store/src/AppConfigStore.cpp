@@ -24,7 +24,6 @@ bool appConfigLoad(app_core::AppConfig& config) {
   app_core::AppConfig loaded{};
   loaded.schemaVersion = document["schemaVersion"] | 0;
   JsonObjectConst navigation = document["navigation"];
-  loaded.autoRotateSeconds = navigation["autoRotateSeconds"] | 0;
   JsonArrayConst screens = navigation["screens"];
   for (JsonObjectConst screen : screens) {
     if (loaded.screenCount >= app_core::AppConfig::kMaxScreens) break;
@@ -37,9 +36,12 @@ bool appConfigLoad(app_core::AppConfig& config) {
         (screen["enabled"] | false) ? 1 : 0;
     ++loaded.screenCount;
   }
-  loaded.normalize();
+  const bool migrated = loaded.normalize();
   if (!loaded.validate()) return false;
   config = loaded;
+  // Schema 2 deliberately removed timed screen rotation. Rewrite older host
+  // JSON once so the obsolete setting cannot reappear after a later update.
+  if (migrated) appConfigSave(config);
   return true;
 }
 
@@ -49,7 +51,6 @@ bool appConfigSave(const app_core::AppConfig& config) {
   JsonDocument document;
   document["schemaVersion"] = config.schemaVersion;
   JsonObject navigation = document["navigation"].to<JsonObject>();
-  navigation["autoRotateSeconds"] = config.autoRotateSeconds;
   JsonArray screens = navigation["screens"].to<JsonArray>();
   for (uint8_t i = 0; i < config.screenCount; ++i) {
     JsonObject screen = screens.add<JsonObject>();
@@ -67,4 +68,3 @@ bool appConfigSave(const app_core::AppConfig& config) {
   preferences.end();
   return saved;
 }
-
