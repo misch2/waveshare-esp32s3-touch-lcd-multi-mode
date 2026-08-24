@@ -10,14 +10,14 @@ Current gesture contract:
 
 - horizontal swipe: previous/next screen;
 - screens never change automatically on a timer;
-- vertical swipe: delivered to the active module (the radar module changes
-  its range);
+- vertical swipe: delivered to the active module (weather and aircraft radar
+  change their range);
 - tap and long press: delivered to the active module/LVGL controls.
 
-The radar acknowledges a vertical range swipe immediately with a short LVGL
-overlay containing the direction and newly selected range. It is flushed before
-the upstream renderer recalculates its cached crops or starts a RainViewer tile
-burst, so slow data work cannot make a registered gesture look ignored.
+Both radar screens acknowledge a vertical range swipe immediately with a short
+LVGL overlay containing the direction and newly selected range. It is flushed
+before the upstream renderer starts its potentially slow data work, so a
+registered gesture does not look ignored.
 
 The clock dashboard additionally filters its manual day/night short-click
 handler through the central recognizer's tap tolerance. This is necessary
@@ -58,7 +58,14 @@ Implemented screens:
   `ScreenForecast` and `WxIcon` implementations. It uses the same shared
   480x480 canvas as radar, retains the original Open-Meteo forecast and
   air-quality parsing, and performs network work only while visible under the
-  common fetch lease. Its hardware smoke test is still pending.
+  common fetch lease. Forecast, air quality and pollen output have passed a
+  physical smoke test.
+- `meteo.planes` wraps the pinned MeteoPlaneRadar `ScreenPlanes`, `ADSB` and
+  `Route` implementations. It retains the original adsb.fi parser, map,
+  filters, range persistence, tap-to-select detail and cached adsbdb route
+  lookup. ADS-B and route TLS work is serialized through the common fetch
+  lease; the adapter reuses the same Meteo canvas and still needs a physical
+  smoke test.
 
 The host configuration is stored as versioned JSON in NVS. Schema 3 uses stable
 screen IDs, enabled flags and configured order, always keeps at least one
@@ -100,10 +107,11 @@ frame batch. RainViewer owns it for the active incremental tile burst and
 releases both the lease and reusable TLS connection when the screen is hidden.
 Forecast owns it for each complete upstream request-and-parse batch.
 
-Radar and forecast share one host-owned `meteo_canvas` PSRAM allocation and
-select its presentation callback from their `show()`/`hide()` lifecycle. This
-keeps the upstream global `gfx` contract intact without allocating another
-roughly 460 kB surface or introducing another panel flush owner.
+Radar, forecast and aircraft share one host-owned `meteo_canvas` PSRAM
+allocation and select its presentation callback from their `show()`/`hide()`
+lifecycle. This keeps the upstream global `gfx` contract intact without
+allocating another roughly 460 kB surface per screen or introducing another
+panel flush owner.
 
 The standalone Meteo build retains Arduino_GFX 1.4.9 through its own sketch
 profile. The combined firmware pins Arduino_GFX 1.6.6 because its Arduino-ESP32

@@ -70,8 +70,13 @@ physical display. The following are verified:
 - `meteo.forecast` compiles the original `Forecast`, `ScreenForecast` and
   `WxIcon` implementations and shares the same host-owned canvas with radar.
   Its Open-Meteo forecast and air-quality requests are serialized with other
-  module TLS work and run only while the screen is active; physical verification
-  is still required;
+  module TLS work and run only while the screen is active; forecast, air
+  quality and pollen output have passed a physical smoke test;
+- `meteo.planes` compiles the original `ScreenPlanes`, `ADSB` and `Route`
+  implementations and shares the host-owned Meteo canvas. It retains the
+  upstream map, filtering, persisted range, aircraft detail and cached route
+  lookup while serializing its TLS batches through `FetchLease`; physical
+  verification is still required;
 - Home Assistant refreshes reuse one `HTTPClient` and TLS connection for the
   complete entity batch. A transport failure aborts the batch, preserves the
   last complete snapshot and uses a wrap-safe 5--60 second exponential
@@ -134,10 +139,10 @@ Current IDs:
 - `clock.dashboard`
 - `meteo.radar`
 - `meteo.forecast`
+- `meteo.planes`
 
 Expected future IDs include, as applicable:
 
-- `meteo.planes`
 - other IDs in the owning module's namespace
 
 The compile-time registry in `ScreenManager` is sufficient for this embedded
@@ -245,12 +250,24 @@ rendering and overlays remain upstream-owned. Do not move those implementations
 back into the host module.
 
 `ForecastScreen` reuses the original `Forecast`, `ScreenForecast` and `WxIcon`
-sources through thin translation units. Radar and forecast share the one
-`meteo_canvas` RGB565 PSRAM surface because only the active screen may render.
+sources through thin translation units. Radar, forecast and aircraft share the
+one `meteo_canvas` RGB565 PSRAM surface because only the active screen may render.
 The forecast adapter holds `network_host::FetchLease` around the complete
 upstream fetch/parse batch and uses a host-side data signature to invalidate the
 LVGL image when air-quality or pollen values change, which the pinned upstream
 screen tick does not observe by itself.
+
+`PlanesScreen` reuses the original `ScreenPlanes`, `ADSB` and `Route` sources
+through thin translation units. It shares `meteo_canvas`, holds the host fetch
+lease around ADS-B and route work, forwards taps to upstream aircraft
+selection and maps vertical swipe to the persisted plane range. The active
+module receives a horizontal swipe before global navigation; an open aircraft
+detail consumes the first horizontal or vertical swipe and closes, while the
+normal horizontal fallback still switches screens. The pinned `Route_Tick()`
+has no poll hook and can therefore briefly block the UI while its optional
+detail lookup is in progress; preserve
+this upstream behavior for the prototype and prefer a small upstream hook or
+data-service boundary if it needs improvement.
 
 The combined Arduino-ESP32 3.3.11 build pins Arduino_GFX 1.6.6, because the
 upstream standalone pin 1.4.9 predates the framework's changed SPI API. This is
@@ -505,8 +522,8 @@ the Home Assistant stored-token URL reuse policy used by the web flow.
 2. Physically verify the real CHMI and RainViewer radar adapter, including
    RainViewer data, first-load/refresh animation and memory headroom; CHMI and
    the interaction path have already passed.
-3. Physically verify `meteo.forecast`, then add the remaining Meteo screens
-   (starting with planes) as separate stable-ID modules.
+3. Physically verify the new `meteo.planes` adapter, including ADS-B data,
+   range gestures, tap detail, route lookup and memory headroom.
 4. Mount the adapted original Meteo configuration page under its module prefix
    and connect it from the existing common landing page.
 5. Add combined configuration export/import and diagnostics. Keep firmware

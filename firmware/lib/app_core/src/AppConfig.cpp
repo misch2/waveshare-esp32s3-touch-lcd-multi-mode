@@ -8,6 +8,7 @@ namespace {
 constexpr char kClockScreenId[] = "clock.dashboard";
 constexpr char kRadarScreenId[] = "meteo.radar";
 constexpr char kForecastScreenId[] = "meteo.forecast";
+constexpr char kPlanesScreenId[] = "meteo.planes";
 
 std::size_t boundedLength(const char* text, std::size_t limit) {
     if (text == nullptr) {
@@ -100,7 +101,7 @@ constexpr std::size_t AppConfig::kScreenIdStorage;
 AppConfig AppConfig::defaults() {
     AppConfig config{};
     config.schemaVersion = kSchemaVersion;
-    config.screenCount = 3;
+    config.screenCount = 4;
 
     copyId(config.screens[0].id, kClockScreenId);
     config.screens[0].enabled = 1;
@@ -108,6 +109,8 @@ AppConfig AppConfig::defaults() {
     config.screens[1].enabled = 1;
     copyId(config.screens[2].id, kForecastScreenId);
     config.screens[2].enabled = 1;
+    copyId(config.screens[3].id, kPlanesScreenId);
+    config.screens[3].enabled = 1;
 
     for (std::uint8_t i = config.screenCount; i < kMaxScreens; ++i) {
         clearScreen(config.screens[i]);
@@ -161,7 +164,9 @@ bool AppConfig::normalize() {
         normalized[1].enabled = 1;
         copyId(normalized[2].id, kForecastScreenId);
         normalized[2].enabled = 1;
-        normalizedCount = 3;
+        copyId(normalized[3].id, kPlanesScreenId);
+        normalized[3].enabled = 1;
+        normalizedCount = 4;
         changed = true;
     }
 
@@ -176,6 +181,9 @@ bool AppConfig::normalize() {
         changed = true;
     }
     if (appendEnabledScreen(normalized, normalizedCount, kForecastScreenId)) {
+        changed = true;
+    }
+    if (appendEnabledScreen(normalized, normalizedCount, kPlanesScreenId)) {
         changed = true;
     }
 

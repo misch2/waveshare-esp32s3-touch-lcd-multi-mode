@@ -59,13 +59,15 @@ void testAppConfigDefaults() {
 
   CHECK(config.validate());
   CHECK_EQ(config.schemaVersion, AppConfig::kSchemaVersion);
-  CHECK_EQ(config.screenCount, 3);
+  CHECK_EQ(config.screenCount, 4);
   CHECK_STREQ(config.screens[0].id, "clock.dashboard");
   CHECK_STREQ(config.screens[1].id, "meteo.radar");
   CHECK_STREQ(config.screens[2].id, "meteo.forecast");
+  CHECK_STREQ(config.screens[3].id, "meteo.planes");
   CHECK(config.isEnabled("clock.dashboard"));
   CHECK(config.isEnabled("meteo.radar"));
   CHECK(config.isEnabled("meteo.forecast"));
+  CHECK(config.isEnabled("meteo.planes"));
 }
 
 void testAppConfigNormalizesAndPreservesOrder() {
@@ -88,11 +90,12 @@ void testAppConfigNormalizesAndPreservesOrder() {
   CHECK(config.normalize());
   CHECK(config.validate());
   CHECK_EQ(config.schemaVersion, AppConfig::kSchemaVersion);
-  CHECK_EQ(config.screenCount, 4);
+  CHECK_EQ(config.screenCount, 5);
   CHECK_STREQ(config.screens[0].id, "clock.dashboard");
   CHECK_STREQ(config.screens[1].id, "extra.screen");
   CHECK_STREQ(config.screens[2].id, "meteo.radar");
   CHECK_STREQ(config.screens[3].id, "meteo.forecast");
+  CHECK_STREQ(config.screens[4].id, "meteo.planes");
   CHECK_EQ(config.screens[0].enabled, 1);
   CHECK_EQ(config.screens[1].enabled, 0);
   CHECK_EQ(config.screens[2].enabled, 1);
@@ -108,10 +111,11 @@ void testAppConfigFallbackAndEditing() {
 
   CHECK(config.normalize());
   CHECK(config.validate());
-  CHECK_EQ(config.screenCount, 3);
+  CHECK_EQ(config.screenCount, 4);
   CHECK_STREQ(config.screens[0].id, "clock.dashboard");
   CHECK_STREQ(config.screens[1].id, "meteo.radar");
   CHECK_STREQ(config.screens[2].id, "meteo.forecast");
+  CHECK_STREQ(config.screens[3].id, "meteo.planes");
 
   CHECK(config.setEnabled("meteo.radar", false));
   CHECK(!config.isEnabled("meteo.radar"));
@@ -130,6 +134,7 @@ void testAppConfigKeepsOneScreenReachable() {
   config.screens[0].enabled = 0;
   config.screens[1].enabled = 0;
   config.screens[2].enabled = 0;
+  config.screens[3].enabled = 0;
   CHECK(!config.validate());
   CHECK(config.normalize());
   CHECK(config.validate());
@@ -138,6 +143,15 @@ void testAppConfigKeepsOneScreenReachable() {
   AppConfig empty{};
   empty.schemaVersion = AppConfig::kSchemaVersion;
   CHECK(!empty.validate());
+}
+
+void testAppConfigNormalizationRetainsDisabledPlanes() {
+  AppConfig config = AppConfig::defaults();
+  CHECK(config.setEnabled("meteo.planes", false));
+  CHECK(!config.normalize());
+  CHECK(config.validate());
+  CHECK_EQ(config.findScreen("meteo.planes"), 3);
+  CHECK(!config.isEnabled("meteo.planes"));
 }
 
 void testDayNightTransitionTimestampToleranceAndFallback() {
@@ -515,7 +529,7 @@ class RecordingModule final : public ScreenModule {
   }
 
   bool beginResult = true;
-  bool consumeGesture = true;
+  bool consumeGesture = false;
   int beginCount = 0;
   int showCount = 0;
   int hideCount = 0;
@@ -563,10 +577,12 @@ void testScreenManagerNavigationAndDispatch() {
   GestureEvent vertical{};
   vertical.kind = GestureKind::VerticalSwipe;
   vertical.direction = -1;
+  radar.consumeGesture = true;
   CHECK(manager.dispatch(vertical));
   CHECK(manager.active() == &radar);  // vertical gestures stay module-local
   CHECK_EQ(radar.gestureCount, 1);
   CHECK(radar.lastGesture.kind == GestureKind::VerticalSwipe);
+  radar.consumeGesture = false;
 
   GestureEvent right{};
   right.kind = GestureKind::HorizontalSwipe;
@@ -592,6 +608,85 @@ void testScreenManagerNavigationAndDispatch() {
   manager.tick(1234);
   CHECK_EQ(forecast.tickCount, 1);
   CHECK_EQ(forecast.lastTickMs, 1234);
+}
+
+void testScreenManagerNavigatesFourScreensAndSkipsDisabledPlanes() {
+  AppConfig config = AppConfig::defaults();
+  RecordingModule clock("clock.dashboard");
+  RecordingModule radar("meteo.radar");
+  RecordingModule forecast("meteo.forecast");
+  RecordingModule planes("meteo.planes");
+  clock.consumeGesture = false;
+  radar.consumeGesture = false;
+  forecast.consumeGesture = false;
+  planes.consumeGesture = false;
+  ScreenManager manager(config);
+  CHECK(manager.add(clock));
+  CHECK(manager.add(radar));
+  CHECK(manager.add(forecast));
+  CHECK(manager.add(planes));
+  CHECK(manager.begin());
+  CHECK(manager.active() == &clock);
+
+  GestureEvent left{};
+  left.kind = GestureKind::HorizontalSwipe;
+  left.direction = -1;
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &radar);
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &forecast);
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &planes);
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &clock);
+
+  // Disabling the last screen must remove it from both navigation directions
+  // while retaining the configured order of all other screens.
+  CHECK(config.setEnabled("meteo.planes", false));
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &radar);
+  GestureEvent right{};
+  right.kind = GestureKind::HorizontalSwipe;
+  right.direction = 1;
+  CHECK(manager.dispatch(right));
+  CHECK(manager.active() == &clock);
+  CHECK(manager.dispatch(right));
+  CHECK(manager.active() == &forecast);
+  CHECK(planes.showCount == 1);
+}
+
+void testScreenManagerUsesModuleFirstHorizontalFallback() {
+  AppConfig config = AppConfig::defaults();
+  RecordingModule clock("clock.dashboard");
+  RecordingModule radar("meteo.radar");
+  RecordingModule forecast("meteo.forecast");
+  RecordingModule planes("meteo.planes");
+  ScreenManager manager(config);
+  CHECK(manager.add(clock));
+  CHECK(manager.add(radar));
+  CHECK(manager.add(forecast));
+  CHECK(manager.add(planes));
+  CHECK(manager.begin());
+  CHECK(manager.active() == &clock);
+
+  GestureEvent left{};
+  left.kind = GestureKind::HorizontalSwipe;
+  left.direction = -1;
+
+  // An active modal/control gets first refusal and can consume the swipe.
+  clock.consumeGesture = true;
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &clock);
+  CHECK_EQ(clock.gestureCount, 1);
+  CHECK_EQ(radar.showCount, 0);
+
+  // Once the module declines the same gesture, global navigation follows the
+  // configured order and reveals the next enabled screen.
+  clock.consumeGesture = false;
+  CHECK(manager.dispatch(left));
+  CHECK(manager.active() == &radar);
+  CHECK_EQ(clock.gestureCount, 2);
+  CHECK_EQ(radar.showCount, 1);
 }
 
 void testScreenManagerTickNeverChangesScreen() {
@@ -691,14 +786,17 @@ void testScreenManagerDoesNotSelfSwitchWithOneEnabledScreen() {
   AppConfig config = AppConfig::defaults();
   CHECK(config.setEnabled("meteo.radar", false));
   CHECK(config.setEnabled("meteo.forecast", false));
+  CHECK(config.setEnabled("meteo.planes", false));
 
   RecordingModule clock("clock.dashboard");
   RecordingModule radar("meteo.radar");
   RecordingModule forecast("meteo.forecast");
+  RecordingModule planes("meteo.planes");
   ScreenManager manager(config);
   CHECK(manager.add(clock));
   CHECK(manager.add(radar));
   CHECK(manager.add(forecast));
+  CHECK(manager.add(planes));
   CHECK(manager.begin());
   CHECK(manager.active() == &clock);
 
@@ -730,6 +828,7 @@ void testScreenManagerKeepsLocalGesturesLocal() {
   CHECK(manager.add(forecast));
   CHECK(manager.begin());
   CHECK(manager.showById("meteo.radar"));
+  radar.consumeGesture = true;
 
   const int radarShowCount = radar.showCount;
   const int radarHideCount = radar.hideCount;
@@ -762,6 +861,7 @@ int main() {
   testAppConfigNormalizesAndPreservesOrder();
   testAppConfigFallbackAndEditing();
   testAppConfigKeepsOneScreenReachable();
+  testAppConfigNormalizationRetainsDisabledPlanes();
   testDayNightTransitionTimestampToleranceAndFallback();
   testDayNightOffsetsAndTransitions();
   testHomeAssistantStoredTokenReusePolicy();
@@ -772,6 +872,8 @@ int main() {
   testGestureDirectionsAndDebounce();
   testGestureTapAndLongPress();
   testScreenManagerNavigationAndDispatch();
+  testScreenManagerNavigatesFourScreensAndSkipsDisabledPlanes();
+  testScreenManagerUsesModuleFirstHorizontalFallback();
   testScreenManagerTickNeverChangesScreen();
   testScreenManagerUsesConfiguredOrder();
   testScreenManagerSkipsDisabledAndUnregisteredEntries();

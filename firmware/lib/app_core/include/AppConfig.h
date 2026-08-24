@@ -36,8 +36,10 @@ struct AppConfig {
      * Invalid and duplicate screen entries are removed while preserving the
      * order of the remaining entries. Unknown but syntactically valid IDs
      * are retained, which keeps configuration forward-compatible with new
-     * modules. If no valid screen remains, the two built-in defaults are
-     * installed. The return value is true when any field was changed.
+     * modules. If no valid screen remains, the built-in defaults are
+     * installed. Missing built-in screens are appended in default order so
+     * older persisted configurations learn about newly integrated modules.
+     * The return value is true when any field was changed.
      */
     bool normalize();
 

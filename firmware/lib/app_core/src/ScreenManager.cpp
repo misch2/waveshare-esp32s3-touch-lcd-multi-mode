@@ -76,6 +76,10 @@ bool ScreenManager::step(int8_t direction) {
 bool ScreenManager::dispatch(const GestureEvent& event) {
   if (activeIndex_ >= count_) return false;
   if (event.kind == GestureKind::HorizontalSwipe) {
+    // Give an active modal/control first refusal. Most modules return false
+    // and get the normal global navigation; aircraft detail consumes the
+    // first swipe to close itself, matching the upstream interaction model.
+    if (modules_[activeIndex_]->handleGesture(event)) return true;
     // A leftward swipe reveals the next screen; a rightward swipe the previous.
     return step(event.direction < 0 ? 1 : -1);
   }

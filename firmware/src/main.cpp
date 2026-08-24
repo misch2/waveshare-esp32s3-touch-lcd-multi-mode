@@ -15,6 +15,7 @@
 #include "I2C_Driver.h"
 #include "MeteoSettingsAdapter.h"
 #include "NetworkHost.h"
+#include "PlanesScreen.h"
 #include "RadarScreen.h"
 #include "ScreenManager.h"
 #include "TCA9554PWR.h"
@@ -40,6 +41,7 @@ ClockScreen clockScreen(clockConfig, previewClockBrightness, openClockSettings,
                         allowClockDashboardShortClick);
 RadarScreen radarScreen;
 ForecastScreen forecastScreen;
+PlanesScreen planesScreen;
 GestureEvent pendingGesture;
 bool gesturePending = false;
 bool clockTimeWasSynchronized = false;
@@ -216,7 +218,7 @@ void setup() {
                                       endConfigurationStorageWrite);
   displayHostSetBrightness(clockConfig.dayBrightness);
   if (!screenManager.add(clockScreen) || !screenManager.add(radarScreen) ||
-      !screenManager.add(forecastScreen)) {
+      !screenManager.add(forecastScreen) || !screenManager.add(planesScreen)) {
     halt("screen registration failed");
   }
   if (!screenManager.begin()) halt("screen init failed");
