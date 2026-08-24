@@ -9,7 +9,10 @@ The combined web-route tests cover the canonical status, diagnostics, export
 and import paths, the bounded 16 KiB import limit, default null callbacks and
 helper results, callback assignment and invocation (including the import detail
 buffer, validation/apply phases and storage callbacks), and the `CombinedWebOptions` compatibility
-alias. Firmware update routes are intentionally absent from this contract.
+alias. Manual-only firmware upload is part of the route contract: its canonical
+path, 6 MiB bound, complete lifecycle callbacks and chunk buffers are tested.
+Automatic update discovery and installation remain intentionally absent from
+this contract.
 
 The web-route tests cover the combined Meteo defaults (`/meteo/` and
 `/api/modules/meteo`), disabled legacy aliases and lifecycle/update flags,

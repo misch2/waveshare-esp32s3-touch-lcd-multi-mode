@@ -14,6 +14,7 @@
 // narrow root-owned seam into that implementation's anonymous-namespace
 // authentication policy; it is intentionally not a second auth model.
 extern bool configurationWebRequireHostAccess();
+extern bool configurationWebRegisterHostClockPage(WebServer& hostServer);
 
 namespace web_host {
 namespace {
@@ -23,11 +24,63 @@ constexpr std::size_t kStatusBufferSize = 4096;
 constexpr std::size_t kDiagnosticsBufferSize = 12288;
 constexpr std::size_t kExportBufferSize = 32768;
 constexpr std::size_t kImportMessageSize = 256;
+constexpr std::size_t kFirmwareMessageSize = 256;
 
 app_core::CombinedWebRoutes combinedRoutes;
 char* statusBuffer = nullptr;
 char* diagnosticsBuffer = nullptr;
 char* exportBuffer = nullptr;
+
+bool firmwareUploadAccessDenied = false;
+bool firmwareUploadFailed = false;
+bool firmwareUploadStarted = false;
+bool firmwareUploadCompleted = false;
+bool firmwareUploadAbortCalled = false;
+bool firmwareRestartPending = false;
+int firmwareUploadErrorStatus = 400;
+std::size_t firmwareUploadReceived = 0;
+char firmwareUploadMessage[kFirmwareMessageSize] = {};
+
+void clearFirmwareUploadState() {
+  firmwareUploadAccessDenied = false;
+  firmwareUploadFailed = false;
+  firmwareUploadStarted = false;
+  firmwareUploadCompleted = false;
+  firmwareUploadAbortCalled = false;
+  firmwareUploadErrorStatus = 400;
+  firmwareUploadReceived = 0;
+  firmwareUploadMessage[0] = '\0';
+}
+
+void setFirmwareUploadError(const char* message, int status = 400) {
+  firmwareUploadFailed = true;
+  firmwareUploadErrorStatus = status;
+  if (message == nullptr || message[0] == '\0') {
+    message = "Nahrání firmwaru selhalo.";
+  }
+  std::strncpy(firmwareUploadMessage, message,
+               sizeof(firmwareUploadMessage) - 1);
+  firmwareUploadMessage[sizeof(firmwareUploadMessage) - 1] = '\0';
+}
+
+void abortFirmwareUpload() {
+  if (!firmwareUploadStarted || firmwareUploadAbortCalled ||
+      combinedRoutes.firmwareUploadAbort == nullptr) {
+    return;
+  }
+  firmwareUploadAbortCalled = true;
+  combinedRoutes.firmwareUploadAbort();
+}
+
+const char* uploadBasename(const String& filename) {
+  const char* value = filename.c_str();
+  const char* slash = std::strrchr(value, '/');
+  const char* backslash = std::strrchr(value, '\\');
+  if (backslash != nullptr && (slash == nullptr || backslash > slash)) {
+    slash = backslash;
+  }
+  return slash == nullptr ? value : slash + 1;
+}
 
 bool ensureClockWebNamespaces() {
   // The combined host starts its web layer before RGB scanout, so this is the
@@ -191,6 +244,134 @@ void handleHostImport() {
   sendImportResult(200, true, detail);
 }
 
+void handleHostFirmwareUploadChunk() {
+  HTTPUpload& upload = server.upload();
+
+  if (upload.status == UPLOAD_FILE_START) {
+    clearFirmwareUploadState();
+    // Authenticate before accepting the first chunk.  A denied request is
+    // still drained by WebServer; the completion handler must not overwrite
+    // the shared policy's response with a second body.
+    if (!combinedAccessAllowed()) {
+      firmwareUploadAccessDenied = true;
+      return;
+    }
+
+    if (!combinedRoutes.hasFirmwareUploadCallbacks()) {
+      setFirmwareUploadError("Ruční aktualizace není k dispozici.", 404);
+      return;
+    }
+
+    // The combined host deliberately accepts the PlatformIO application
+    // image only.  In particular, a factory image is not a valid OTA slot
+    // payload and must not be mistaken for firmware.bin.
+    if (std::strcmp(uploadBasename(upload.filename), "firmware.bin") != 0) {
+      setFirmwareUploadError(
+          "Vyberte soubor firmware.bin (nikoli firmware.factory.bin).");
+      return;
+    }
+
+    char detail[kFirmwareMessageSize];
+    detail[0] = '\0';
+    if (!combinedRoutes.firmwareUploadBegin(
+            "firmware.bin", detail, sizeof(detail))) {
+      detail[sizeof(detail) - 1] = '\0';
+      setFirmwareUploadError(
+          detail[0] != '\0' ? detail : "Firmware se nepodařilo připravit.",
+          503);
+      return;
+    }
+    firmwareUploadStarted = true;
+    return;
+  }
+
+  if (upload.status == UPLOAD_FILE_WRITE) {
+    // Returning without writing is intentional: WebServer continues to read
+    // and discard the remaining multipart body after an earlier failure.
+    if (firmwareUploadAccessDenied || firmwareUploadFailed ||
+        !firmwareUploadStarted || firmwareUploadCompleted) {
+      return;
+    }
+    if (upload.currentSize > app_core::COMBINED_WEB_MAX_FIRMWARE_BYTES -
+                                firmwareUploadReceived) {
+      setFirmwareUploadError("Firmware je příliš velký.", 413);
+      abortFirmwareUpload();
+      return;
+    }
+
+    char detail[kFirmwareMessageSize];
+    detail[0] = '\0';
+    if (!combinedRoutes.firmwareUploadWrite(
+            upload.buf, upload.currentSize, detail, sizeof(detail))) {
+      detail[sizeof(detail) - 1] = '\0';
+      setFirmwareUploadError(
+          detail[0] != '\0' ? detail : "Zápis firmwaru selhal.", 500);
+      abortFirmwareUpload();
+      return;
+    }
+    firmwareUploadReceived += upload.currentSize;
+    delay(0);
+    return;
+  }
+
+  if (upload.status == UPLOAD_FILE_END) {
+    if (firmwareUploadAccessDenied || firmwareUploadFailed ||
+        !firmwareUploadStarted || firmwareUploadCompleted) {
+      return;
+    }
+    char detail[kFirmwareMessageSize];
+    detail[0] = '\0';
+    if (!combinedRoutes.firmwareUploadEnd(detail, sizeof(detail))) {
+      detail[sizeof(detail) - 1] = '\0';
+      setFirmwareUploadError(
+          detail[0] != '\0' ? detail : "Firmware se nepodařilo dokončit.",
+          500);
+      abortFirmwareUpload();
+      return;
+    }
+    firmwareUploadCompleted = true;
+    return;
+  }
+
+  if (upload.status == UPLOAD_FILE_ABORTED) {
+    if (firmwareUploadAccessDenied) return;
+    if (!firmwareUploadFailed) {
+      setFirmwareUploadError("Nahrání firmwaru bylo přerušeno.", 400);
+    }
+    abortFirmwareUpload();
+  }
+}
+
+void handleHostFirmwareUploadDone() {
+  if (firmwareUploadAccessDenied) {
+    clearFirmwareUploadState();
+    return;
+  }
+  if (!combinedRoutes.hasFirmwareUploadCallbacks()) {
+    sendImportResult(404, false, "Ruční aktualizace není k dispozici.");
+    clearFirmwareUploadState();
+    return;
+  }
+  if (!firmwareUploadCompleted || firmwareUploadFailed) {
+    const int status = firmwareUploadErrorStatus;
+    sendImportResult(status, false,
+                     firmwareUploadMessage[0] != '\0'
+                         ? firmwareUploadMessage
+                         : "Nahrání firmwaru selhalo.");
+    clearFirmwareUploadState();
+    return;
+  }
+
+  server.sendHeader(F("Connection"), F("close"));
+  sendImportResult(200, true,
+                   "Firmware byl nahrán. Zařízení se restartuje.");
+  // The HTTP response is sent before loop() invokes this callback.  Keeping
+  // the restart out of the multipart callback also lets the browser receive
+  // the final JSON verdict instead of losing the connection mid-upload.
+  firmwareRestartPending = true;
+  clearFirmwareUploadState();
+}
+
 char* allocateBufferIfNeeded(char* current, std::size_t capacity) {
   if (current != nullptr) return current;
   return static_cast<char*>(
@@ -214,11 +395,20 @@ bool begin(ClockConfigLoadCallback loadCallback,
 
   const bool hasCombinedStorageBegin =
       requestedCombinedRoutes.storageBegin != nullptr;
-  const bool hasCombinedStorageEnd = requestedCombinedRoutes.storageEnd != nullptr;
+  const bool hasCombinedStorageEnd =
+      requestedCombinedRoutes.storageEnd != nullptr;
+  const bool hasAnyFirmwareUploadCallback =
+      requestedCombinedRoutes.firmwareUploadBegin != nullptr ||
+      requestedCombinedRoutes.firmwareUploadWrite != nullptr ||
+      requestedCombinedRoutes.firmwareUploadEnd != nullptr ||
+      requestedCombinedRoutes.firmwareUploadAbort != nullptr ||
+      requestedCombinedRoutes.firmwareUploadRestart != nullptr;
   if (hasCombinedStorageBegin != hasCombinedStorageEnd ||
       (requestedCombinedRoutes.importConfig != nullptr &&
        (!requestedCombinedRoutes.hasImportValidationCallback() ||
-        !requestedCombinedRoutes.hasStorageCallbacks()))) {
+        !requestedCombinedRoutes.hasStorageCallbacks())) ||
+      hasAnyFirmwareUploadCallback !=
+          requestedCombinedRoutes.hasFirmwareUploadCallbacks()) {
     // An import without both halves of the display-safe storage transaction
     // must never be exposed: a flash write could corrupt RGB scanout.
     return false;
@@ -240,6 +430,7 @@ bool begin(ClockConfigLoadCallback loadCallback,
           displayPowerCallback, displayPowerStatusCallback)) {
     return false;
   }
+  if (!::configurationWebRegisterHostClockPage(server)) return false;
 
   // Meteo uses the same caller-owned server and the same canonical security
   // policy as the clock module.  These host invariants are forced here even
@@ -278,6 +469,10 @@ bool begin(ClockConfigLoadCallback loadCallback,
   if (combinedRoutes.importConfig != nullptr) {
     server.on(app_core::COMBINED_WEB_IMPORT_PATH, HTTP_POST, handleHostImport);
   }
+  if (combinedRoutes.hasFirmwareUploadCallbacks()) {
+    server.on(app_core::COMBINED_WEB_FIRMWARE_UPLOAD_PATH, HTTP_POST,
+              handleHostFirmwareUploadDone, handleHostFirmwareUploadChunk);
+  }
 
   server.on("/", HTTP_GET, handleHostRoot);
   server.onNotFound([]() {
@@ -291,6 +486,12 @@ bool begin(ClockConfigLoadCallback loadCallback,
 void loop() {
   server.handleClient();
   ::configurationWebLoop();
+  if (firmwareRestartPending &&
+      combinedRoutes.firmwareUploadRestart != nullptr) {
+    firmwareRestartPending = false;
+    delay(250);
+    combinedRoutes.firmwareUploadRestart();
+  }
 }
 
 void ensureActive() { ::configurationWebEnsureActive(); }

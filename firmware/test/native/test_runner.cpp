@@ -401,6 +401,75 @@ bool combinedImportForTest(const char* json, std::size_t length,
 
 bool combinedAccessAllowedForTest() { return true; }
 
+int combinedFirmwareBeginCallCount = 0;
+int combinedFirmwareWriteCallCount = 0;
+int combinedFirmwareEndCallCount = 0;
+int combinedFirmwareAbortCallCount = 0;
+int combinedFirmwareRestartCallCount = 0;
+const char* combinedFirmwareFilename = nullptr;
+const unsigned char* combinedFirmwareData = nullptr;
+std::size_t combinedFirmwareDataLength = 0;
+std::size_t combinedFirmwareMessageCapacity = 0;
+
+bool combinedFirmwareBeginForTest(const char* filename, char* message,
+                                  std::size_t messageCapacity) {
+  ++combinedFirmwareBeginCallCount;
+  combinedFirmwareFilename = filename;
+  combinedFirmwareMessageCapacity = messageCapacity;
+  constexpr char kDetail[] = "upload started";
+  constexpr std::size_t kDetailLength = sizeof(kDetail) - 1;
+  if (filename == nullptr || message == nullptr ||
+      messageCapacity <= kDetailLength) {
+    return false;
+  }
+  std::memcpy(message, kDetail, sizeof(kDetail));
+  return true;
+}
+
+bool combinedFirmwareWriteForTest(const unsigned char* data,
+                                  std::size_t length, char* message,
+                                  std::size_t messageCapacity) {
+  ++combinedFirmwareWriteCallCount;
+  combinedFirmwareData = data;
+  combinedFirmwareDataLength = length;
+  combinedFirmwareMessageCapacity = messageCapacity;
+  constexpr char kDetail[] = "chunk written";
+  constexpr std::size_t kDetailLength = sizeof(kDetail) - 1;
+  if (data == nullptr || length == 0 || message == nullptr ||
+      messageCapacity <= kDetailLength) {
+    return false;
+  }
+  std::memcpy(message, kDetail, sizeof(kDetail));
+  return true;
+}
+
+bool combinedFirmwareEndForTest(char* message,
+                                std::size_t messageCapacity) {
+  ++combinedFirmwareEndCallCount;
+  combinedFirmwareMessageCapacity = messageCapacity;
+  constexpr char kDetail[] = "upload complete";
+  constexpr std::size_t kDetailLength = sizeof(kDetail) - 1;
+  if (message == nullptr || messageCapacity <= kDetailLength) return false;
+  std::memcpy(message, kDetail, sizeof(kDetail));
+  return true;
+}
+
+void combinedFirmwareAbortForTest() { ++combinedFirmwareAbortCallCount; }
+
+void combinedFirmwareRestartForTest() { ++combinedFirmwareRestartCallCount; }
+
+void resetCombinedFirmwareTestState() {
+  combinedFirmwareBeginCallCount = 0;
+  combinedFirmwareWriteCallCount = 0;
+  combinedFirmwareEndCallCount = 0;
+  combinedFirmwareAbortCallCount = 0;
+  combinedFirmwareRestartCallCount = 0;
+  combinedFirmwareFilename = nullptr;
+  combinedFirmwareData = nullptr;
+  combinedFirmwareDataLength = 0;
+  combinedFirmwareMessageCapacity = 0;
+}
+
 void testCombinedWebRoutesDefaultsAndCallbacks() {
   using app_core::CombinedWebOptions;
   using app_core::CombinedWebRoutes;
@@ -409,7 +478,10 @@ void testCombinedWebRoutesDefaultsAndCallbacks() {
   CHECK_STREQ(app_core::COMBINED_WEB_DIAGNOSTICS_PATH, "/api/diagnostics");
   CHECK_STREQ(app_core::COMBINED_WEB_EXPORT_PATH, "/api/config/export");
   CHECK_STREQ(app_core::COMBINED_WEB_IMPORT_PATH, "/api/config/import");
+  CHECK_STREQ(app_core::COMBINED_WEB_FIRMWARE_UPLOAD_PATH,
+              "/api/firmware/upload");
   CHECK_EQ(app_core::COMBINED_WEB_MAX_IMPORT_BYTES, 16384u);
+  CHECK_EQ(app_core::COMBINED_WEB_MAX_FIRMWARE_BYTES, 0x600000u);
 
   const CombinedWebRoutes defaults;
   CHECK(defaults.loadStatus == nullptr);
@@ -420,12 +492,18 @@ void testCombinedWebRoutesDefaultsAndCallbacks() {
   CHECK(defaults.accessAllowed == nullptr);
   CHECK(defaults.storageBegin == nullptr);
   CHECK(defaults.storageEnd == nullptr);
+  CHECK(defaults.firmwareUploadBegin == nullptr);
+  CHECK(defaults.firmwareUploadWrite == nullptr);
+  CHECK(defaults.firmwareUploadEnd == nullptr);
+  CHECK(defaults.firmwareUploadAbort == nullptr);
+  CHECK(defaults.firmwareUploadRestart == nullptr);
   CHECK(!defaults.hasStatusCallback());
   CHECK(!defaults.hasDiagnosticsCallback());
   CHECK(!defaults.hasExportCallback());
   CHECK(!defaults.hasImportValidationCallback());
   CHECK(!defaults.hasImportCallback());
   CHECK(!defaults.hasStorageCallbacks());
+  CHECK(!defaults.hasFirmwareUploadCallbacks());
 
   CombinedWebRoutes routes;
   routes.loadStatus = combinedJsonLoadForTest;
@@ -436,6 +514,11 @@ void testCombinedWebRoutesDefaultsAndCallbacks() {
   routes.accessAllowed = combinedAccessAllowedForTest;
   routes.storageBegin = configurationStorageBeginForTest;
   routes.storageEnd = configurationStorageEndForTest;
+  routes.firmwareUploadBegin = combinedFirmwareBeginForTest;
+  routes.firmwareUploadWrite = combinedFirmwareWriteForTest;
+  routes.firmwareUploadEnd = combinedFirmwareEndForTest;
+  routes.firmwareUploadAbort = combinedFirmwareAbortForTest;
+  routes.firmwareUploadRestart = combinedFirmwareRestartForTest;
 
   CHECK(routes.loadStatus == combinedJsonLoadForTest);
   CHECK(routes.loadDiagnostics == combinedJsonLoadForTest);
@@ -451,6 +534,12 @@ void testCombinedWebRoutesDefaultsAndCallbacks() {
   CHECK(routes.hasImportValidationCallback());
   CHECK(routes.hasImportCallback());
   CHECK(routes.hasStorageCallbacks());
+  CHECK(routes.firmwareUploadBegin == combinedFirmwareBeginForTest);
+  CHECK(routes.firmwareUploadWrite == combinedFirmwareWriteForTest);
+  CHECK(routes.firmwareUploadEnd == combinedFirmwareEndForTest);
+  CHECK(routes.firmwareUploadAbort == combinedFirmwareAbortForTest);
+  CHECK(routes.firmwareUploadRestart == combinedFirmwareRestartForTest);
+  CHECK(routes.hasFirmwareUploadCallbacks());
 
   char output[32] = {};
   const std::size_t statusLength = routes.loadStatus(output, sizeof(output));
@@ -484,6 +573,33 @@ void testCombinedWebRoutesDefaultsAndCallbacks() {
   CHECK(routes.storageBegin());
   CHECK(!routes.storageEnd());
 
+  resetCombinedFirmwareTestState();
+  char uploadMessage[32] = {};
+  CHECK(routes.firmwareUploadBegin("firmware.bin", uploadMessage,
+                                   sizeof(uploadMessage)));
+  CHECK_EQ(combinedFirmwareBeginCallCount, 1);
+  CHECK_STREQ(combinedFirmwareFilename, "firmware.bin");
+  CHECK_STREQ(uploadMessage, "upload started");
+  CHECK_EQ(combinedFirmwareMessageCapacity, sizeof(uploadMessage));
+
+  constexpr unsigned char kFirmwareChunk[] = {0x01, 0xA5, 0xFF, 0x00};
+  std::memset(uploadMessage, 0, sizeof(uploadMessage));
+  CHECK(routes.firmwareUploadWrite(kFirmwareChunk, sizeof(kFirmwareChunk),
+                                   uploadMessage, sizeof(uploadMessage)));
+  CHECK_EQ(combinedFirmwareWriteCallCount, 1);
+  CHECK(combinedFirmwareData == kFirmwareChunk);
+  CHECK_EQ(combinedFirmwareDataLength, sizeof(kFirmwareChunk));
+  CHECK_STREQ(uploadMessage, "chunk written");
+
+  std::memset(uploadMessage, 0, sizeof(uploadMessage));
+  CHECK(routes.firmwareUploadEnd(uploadMessage, sizeof(uploadMessage)));
+  CHECK_EQ(combinedFirmwareEndCallCount, 1);
+  CHECK_STREQ(uploadMessage, "upload complete");
+  routes.firmwareUploadAbort();
+  routes.firmwareUploadRestart();
+  CHECK_EQ(combinedFirmwareAbortCallCount, 1);
+  CHECK_EQ(combinedFirmwareRestartCallCount, 1);
+
   // The compatibility alias must expose the same callback DTO and helpers.
   CombinedWebOptions options;
   options.loadStatus = routes.loadStatus;
@@ -494,13 +610,29 @@ void testCombinedWebRoutesDefaultsAndCallbacks() {
   options.accessAllowed = routes.accessAllowed;
   options.storageBegin = routes.storageBegin;
   options.storageEnd = routes.storageEnd;
+  options.firmwareUploadBegin = routes.firmwareUploadBegin;
+  options.firmwareUploadWrite = routes.firmwareUploadWrite;
+  options.firmwareUploadEnd = routes.firmwareUploadEnd;
+  options.firmwareUploadAbort = routes.firmwareUploadAbort;
+  options.firmwareUploadRestart = routes.firmwareUploadRestart;
   CHECK(options.hasStatusCallback());
   CHECK(options.hasDiagnosticsCallback());
   CHECK(options.hasExportCallback());
   CHECK(options.hasImportValidationCallback());
   CHECK(options.hasImportCallback());
   CHECK(options.hasStorageCallbacks());
+  CHECK(options.hasFirmwareUploadCallbacks());
   CHECK(options.accessAllowed());
+
+  // The compatibility alias must preserve the manual upload callbacks and
+  // their buffer-oriented signatures, not only the presence helper.
+  resetCombinedFirmwareTestState();
+  CHECK(options.firmwareUploadWrite(kFirmwareChunk,
+                                    sizeof(kFirmwareChunk), uploadMessage,
+                                    sizeof(uploadMessage)));
+  CHECK_EQ(combinedFirmwareWriteCallCount, 1);
+  CHECK(combinedFirmwareData == kFirmwareChunk);
+  CHECK_EQ(combinedFirmwareDataLength, sizeof(kFirmwareChunk));
 }
 
 void testConfigurationWebRoutesDefaultsAndCallbacks() {

@@ -62,7 +62,8 @@ physical display. The following are verified:
   changes, were verified on the physical device;
 - automatic firmware discovery and installation are intentionally disabled in
   the combined build. The web and on-device configuration must not expose or
-  enable them; combined-firmware updates are manual;
+  enable them. The common host page instead offers a local, manual-only upload
+  of the combined `firmware.bin`; physical verification is still required;
 - `meteo.radar` now compiles the original `ScreenWeather`, CHMI and RainViewer
   data/rendering path into a host-owned RGB565 canvas which LVGL presents. CHMI
   data, colours, animation, memory headroom and vertical range gestures have
@@ -89,8 +90,8 @@ physical display. The following are verified:
   plus a versioned combined configuration export/import. The combined backup
   keeps host navigation, clock settings and Meteo settings in separate
   sections and excludes Wi-Fi credentials, HA tokens, web/control passwords
-  and every firmware-update field. Build and native route-contract tests pass;
-  physical export/import verification is still required.
+  and every firmware-update field. Download and complete restore have passed a
+  physical round-trip test;
 
 Do not add parallel demo implementations for remaining screens. Adapt the
 proven upstream functionality instead.
@@ -395,13 +396,24 @@ switches must be applied by the main loop. Keep export/import versioned and omit
 Wi-Fi passwords, Home Assistant tokens, admin passwords and control secrets.
 
 The host-wide routes are `/api/status`, `/api/diagnostics`,
-`/api/config/export` and `/api/config/import`. They reuse the clock timed-mode,
-session-cookie and Origin policy. Import is a replace-style operation: validate
-the complete envelope before writing, preserve the stored HA token only when
-the imported HA URL is exactly unchanged, preserve access credentials and web
-mode, and bracket all namespace writes in one display-storage transaction.
-Automatic update policy, discovery state and release metadata are not part of
-this format or these diagnostics.
+`/api/config/export`, `/api/config/import` and the manual-only multipart upload
+at `/api/firmware/upload`. They reuse the clock timed-mode, session-cookie and
+Origin policy. Import is a replace-style operation: validate the complete
+envelope before writing, preserve the stored HA token only when the imported HA
+URL is exactly unchanged, preserve access credentials and web mode, and bracket
+all namespace writes in one display-storage transaction. Automatic update
+policy, discovery state and release metadata are not part of this format or
+these diagnostics.
+
+Manual OTA accepts only the combined PlatformIO application image named
+`firmware.bin`, never `firmware.factory.bin`. Before writing, the host buffers
+and verifies the ESP image header, ESP32-S3 chip ID, application descriptor and
+the running combined project's name. The root-owned service then uses
+`esp_ota_begin/write/end` so ESP-IDF validates the complete image before the
+inactive 6 MiB app partition becomes bootable. It holds `FetchGate` and deletes
+the RGB driver for the complete flash transaction; failure or abort restores
+the display and releases the gate, while success sends the HTTP result first
+and restarts without recreating the old display pipeline.
 
 Every runtime web handler that writes the `clockcfg` partition must use the
 host-provided storage begin/end callbacks. The clock configuration and web mode
@@ -559,9 +571,12 @@ and queued command/storage callback wiring.
 2. Physically verify the real CHMI and RainViewer radar adapter, including
    RainViewer data, first-load/refresh animation and memory headroom; CHMI and
    the interaction path have already passed.
-3. Physically verify the common diagnostics and a combined export/import
-   round-trip, including the display storage lifecycle and preservation of
-   Wi-Fi, HA token and web credentials.
+3. Physically verify the corrected common diagnostics response and the new
+   `/clock/` link back to the common landing page, then exercise both a rejected
+   wrong image and a successful manual `firmware.bin` upload. Combined
+   export/import and its display-safe storage lifecycle have already passed a
+   physical round-trip test; its contract leaves Wi-Fi, HA token and web
+   credentials untouched.
 4. Add regression tests and repeat the hardware smoke test after every phase.
 
 At every phase, prefer a thin wrapper over an imitation of behavior that is

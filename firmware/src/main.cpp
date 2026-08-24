@@ -24,6 +24,7 @@
 #include "I2C_Driver.h"
 #include "MeteoSettingsAdapter.h"
 #include "MeteoWebRoutes.h"
+#include "ManualFirmwareUpdate.h"
 #include "NetworkHost.h"
 #include "NetworkDiagnostics.h"
 #include "PlanesScreen.h"
@@ -189,6 +190,37 @@ void setDisplayForcedOff(bool forcedOff) {
 
 bool displayIsForcedOff() { return displayHostForcedOff(); }
 
+void restartAfterManualFirmwareUpdate() {
+  Serial.println("Firmware update verified; restarting");
+  Serial.flush();
+  ESP.restart();
+}
+
+bool beginManualFirmwareUpload(const char* filename, char* message,
+                               size_t messageCapacity) {
+  return manual_firmware_update::begin(filename, 0, message, messageCapacity);
+}
+
+bool writeManualFirmwareUpload(const unsigned char* data, size_t length,
+                               char* message, size_t messageCapacity) {
+  return manual_firmware_update::write(data, length, message, messageCapacity);
+}
+
+bool endManualFirmwareUpload(char* message, size_t messageCapacity) {
+  return manual_firmware_update::end(message, messageCapacity);
+}
+
+void abortManualFirmwareUpload() { manual_firmware_update::abort(); }
+
+void restartManualFirmwareUpload() {
+  char message[128] = {};
+  if (!manual_firmware_update::restartAfterResponse(message,
+                                                     sizeof(message))) {
+    halt(message[0] != '\0' ? message
+                             : "manual firmware update restart failed");
+  }
+}
+
 const char* meteoScreenIdForIndex(int index) {
   switch (index) {
     case 0: return kClockScreenId;
@@ -211,10 +243,25 @@ int meteoScreenIndexForId(const char* id) {
 size_t writeJsonDocument(const JsonDocument& document, char* out,
                          size_t capacity) {
   if (out == nullptr || capacity == 0) return 0;
+  if (document.overflowed()) {
+    Serial.println("Combined web JSON document allocation overflow");
+    return 0;
+  }
   const size_t required = measureJson(document);
-  if (required == 0 || required >= capacity) return 0;
+  if (required == 0 || required >= capacity) {
+    Serial.printf("Combined web JSON buffer too small: required=%u capacity=%u\n",
+                  static_cast<unsigned>(required),
+                  static_cast<unsigned>(capacity));
+    return 0;
+  }
   const size_t written = serializeJson(document, out, capacity);
-  return written == required ? written : 0;
+  if (written != required) {
+    Serial.printf(
+        "Combined web JSON serialization changed size: required=%u written=%u\n",
+        static_cast<unsigned>(required), static_cast<unsigned>(written));
+    return 0;
+  }
+  return written;
 }
 
 const char* webModeText() {
@@ -234,7 +281,10 @@ void addMemorySnapshot(JsonObject out, const NetworkMemorySnapshot& memory) {
 }
 
 void addNetworkDiagnostic(JsonObject out, NetworkDiagnosticKind kind) {
-  const NetworkDiagnosticSnapshot snapshot = networkDiagnosticsSnapshot(kind);
+  // Keep this mutable: ArduinoJson copies mutable character arrays into the
+  // document. A const local array is treated as linked storage and would leave
+  // `detail` pointing at this expired stack frame after the function returns.
+  NetworkDiagnosticSnapshot snapshot = networkDiagnosticsSnapshot(kind);
   out["attempts"] = snapshot.attempts;
   out["successes"] = snapshot.successes;
   out["failures"] = snapshot.failures;
@@ -455,6 +505,11 @@ app_core::CombinedWebRoutes makeCombinedWebRoutes() {
   routes.importConfig = importCombinedConfigFromWeb;
   routes.storageBegin = beginConfigurationStorageWrite;
   routes.storageEnd = endConfigurationStorageWrite;
+  routes.firmwareUploadBegin = beginManualFirmwareUpload;
+  routes.firmwareUploadWrite = writeManualFirmwareUpload;
+  routes.firmwareUploadEnd = endManualFirmwareUpload;
+  routes.firmwareUploadAbort = abortManualFirmwareUpload;
+  routes.firmwareUploadRestart = restartManualFirmwareUpload;
   return routes;
 }
 
@@ -759,6 +814,11 @@ void setup() {
   if (!network_host::begin()) {
     Serial.println("Warning: network host initialization failed");
   }
+  manual_firmware_update::Callbacks firmwareUpdateCallbacks;
+  firmwareUpdateCallbacks.pauseDisplay = beginConfigurationStorageWrite;
+  firmwareUpdateCallbacks.resumeDisplay = endConfigurationStorageWrite;
+  firmwareUpdateCallbacks.restart = restartAfterManualFirmwareUpdate;
+  manual_firmware_update::configure(firmwareUpdateCallbacks);
   if (!web_host::begin(
           loadClockConfigForWeb, saveClockConfigFromWeb, updateClockWebStatus,
           loadSunTransitionTimes, requestDayNightRefresh, loadDayNightStatus,

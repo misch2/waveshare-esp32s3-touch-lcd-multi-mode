@@ -114,8 +114,16 @@ a versioned envelope with independent host, clock and Meteo sections. It never
 contains Wi-Fi credentials, the Home Assistant token, web/control passwords or
 firmware-update fields; web access mode and credentials are preserved locally
 during a restore. The complete payload is validated before the first NVS write,
-and all writes share one display-safe storage transaction. Firmware discovery
-and installation are intentionally absent.
+and all writes share one display-safe storage transaction.
+
+Firmware release discovery and installation from a remote download are
+intentionally absent. Manual deployment is available on the common page through `POST
+/api/firmware/upload`: choose the application image
+`.pio/build/waveshare-prototype/firmware.bin`, not `firmware.factory.bin`. The
+host validates the ESP32-S3 application header and combined project identity,
+stops the RGB driver and competing network fetches for the flash transaction,
+uses ESP-IDF OTA validation, and restarts only after returning a successful
+upload response.
 
 The first production Meteo seam is connected independently of rendering.
 `MeteoRadarConfig` is a fixed-size, host-testable snapshot rather than another

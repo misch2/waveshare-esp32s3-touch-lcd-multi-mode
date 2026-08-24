@@ -21,6 +21,7 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
     button.secondary{background:#285866}button.danger{background:#9d4b4b}button:disabled{opacity:.45;cursor:not-allowed}
     .tools{margin-top:24px}.tools p{margin:8px 0}.actions{display:flex;flex-wrap:wrap;gap:10px}.actions button{margin-top:8px}
     input[type=file]{display:block;margin-top:12px;max-width:100%}
+    progress{display:block;width:min(100%,420px);height:14px;margin-top:14px;accent-color:#168aae}
     pre{max-height:260px;overflow:auto;padding:14px;background:#081014;border:1px solid #28414a;border-radius:10px;white-space:pre-wrap;word-break:break-word;color:#bce9f5}
     #restoreMessage{min-height:1.5em;color:#bce9f5}
     .disabled{opacity:.65}.disabled .state{color:#9fb7c0}
@@ -58,12 +59,25 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
     <button id="restoreButton" class="danger" type="button" disabled>Obnovit vybranou zálohu</button>
     <p id="restoreMessage" role="status"></p>
   </section>
+  <section class="tools">
+    <div class="state">Ruční aktualizace</div>
+    <h2>Nahrát nový firmware</h2>
+    <p>Vyberte aplikační obraz <strong>firmware.bin</strong>. Soubor <strong>firmware.factory.bin</strong> není určen pro tento upload. Aktualizace proběhne až po potvrzení a zařízení se poté restartuje.</p>
+    <input id="firmwareFile" type="file" accept=".bin,application/octet-stream">
+    <button id="firmwareUploadButton" type="button" disabled>Nahrát firmware</button>
+    <progress id="firmwareProgress" max="100" value="0" hidden></progress>
+    <p id="firmwareMessage" role="status"></p>
+  </section>
   <script>
     (() => {
       const output = document.getElementById('hostOutput');
       const backupFile = document.getElementById('backupFile');
       const restoreButton = document.getElementById('restoreButton');
       const restoreMessage = document.getElementById('restoreMessage');
+      const firmwareFile = document.getElementById('firmwareFile');
+      const firmwareUploadButton = document.getElementById('firmwareUploadButton');
+      const firmwareProgress = document.getElementById('firmwareProgress');
+      const firmwareMessage = document.getElementById('firmwareMessage');
 
       function redirectIfUnauthorized(response) {
         if (response.status === 401 || response.status === 423) {
@@ -142,6 +156,79 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
           restoreMessage.textContent = error.message;
           restoreButton.disabled = false;
         }
+      });
+
+      function firmwareFileName(file) {
+        if (!file || !file.name) return '';
+        return file.name.split(/[\\/]/).pop();
+      }
+
+      function validateFirmwareFile(file) {
+        if (!file) return 'Nejprve vyberte soubor.';
+        if (firmwareFileName(file) !== 'firmware.bin') {
+          return 'Vyberte přesně soubor firmware.bin, nikoli firmware.factory.bin.';
+        }
+        if (file.size > 6291456) return 'Firmware je příliš velký pro OTA slot.';
+        return '';
+      }
+
+      function setFirmwareBusy(busy) {
+        firmwareFile.disabled = busy;
+        firmwareUploadButton.disabled = busy || !firmwareFile.files ||
+                                         firmwareFile.files.length === 0;
+      }
+
+      firmwareFile.addEventListener('change', () => {
+        firmwareMessage.textContent = validateFirmwareFile(firmwareFile.files[0]);
+        firmwareUploadButton.disabled = Boolean(firmwareMessage.textContent);
+      });
+
+      firmwareUploadButton.addEventListener('click', () => {
+        const file = firmwareFile.files && firmwareFile.files[0];
+        const validationError = validateFirmwareFile(file);
+        if (validationError) {
+          firmwareMessage.textContent = validationError;
+          return;
+        }
+        if (!window.confirm('Nahrát firmware a restartovat zařízení?')) return;
+
+        setFirmwareBusy(true);
+        firmwareProgress.hidden = false;
+        firmwareProgress.value = 0;
+        firmwareMessage.textContent = 'Nahrávání probíhá…';
+        const request = new XMLHttpRequest();
+        request.open('POST', '/api/firmware/upload');
+        request.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            firmwareProgress.value = Math.round(event.loaded * 100 / event.total);
+          }
+        });
+        request.onload = () => {
+          if (request.status === 401 || request.status === 423) {
+            window.location.href = '/clock/';
+            return;
+          }
+          let data;
+          try { data = request.responseText ? JSON.parse(request.responseText) : {}; }
+          catch (_) { data = {ok:false, message:'Server vrátil neplatný JSON.'}; }
+          if (request.status >= 200 && request.status < 300 && data.ok !== false) {
+            firmwareProgress.value = 100;
+            firmwareMessage.textContent = data.message ||
+              'Firmware byl nahrán. Zařízení se restartuje…';
+            setFirmwareBusy(true);
+          } else {
+            firmwareMessage.textContent = data.message ||
+              ('Nahrání selhalo (HTTP ' + request.status + ').');
+            setFirmwareBusy(false);
+          }
+        };
+        request.onerror = () => {
+          firmwareMessage.textContent = 'Nahrání firmwaru selhalo.';
+          setFirmwareBusy(false);
+        };
+        const form = new FormData();
+        form.append('firmware', file, file.name);
+        request.send(form);
       });
     })();
   </script>
