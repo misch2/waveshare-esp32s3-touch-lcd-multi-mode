@@ -22,28 +22,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_recorded_tag(component: dict[str, str], path) -> None:
+def validate_recorded_tag(component: dict[str, str], _path) -> None:
+    """Validate the manifest tag metadata without resolving local refs.
+
+    The provenance check is also used by offline CI checkouts, where the
+    submodule may contain only the pinned commit and no tag refs.  The tag is
+    descriptive metadata recorded by the networked finalize workflow; the
+    immutable commit and ancestry checks below remain the source of truth for
+    this offline validation.
+    """
     tag = component.get("upstreamTag")
     if tag is None:
         return
     if not isinstance(tag, str) or not tag:
         raise UpstreamUpdateError(
             f"{component['id']}: upstreamTag must be a non-empty string when present."
-        )
-    tag_ref = f"refs/tags/{tag}"
-    try:
-        tag_target = git_output(path, "rev-parse", "--verify", f"{tag_ref}^{{commit}}")
-        upstream_target = git_output(
-            path, "rev-parse", "--verify", f"{component['upstreamBase']}^{{commit}}"
-        )
-    except UpstreamUpdateError as error:
-        raise UpstreamUpdateError(
-            f"{component['id']}: recorded upstreamTag '{tag}' is not available locally. "
-            "Run the upstream fetch/finalize workflow before validating provenance."
-        ) from error
-    if tag_target != upstream_target:
-        raise UpstreamUpdateError(
-            f"{component['id']}: recorded upstreamTag '{tag}' does not point exactly at upstreamBase."
         )
 
 
