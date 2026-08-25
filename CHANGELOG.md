@@ -28,6 +28,10 @@ All notable changes to this firmware are documented here. The format follows
 
 ### Changed
 
+- Component provenance is recorded as exact fork pins and incorporated
+  upstream bases: MeteoPlaneRadar `dd77fef` / `792ef8d`, and
+  waveshare-hodiny `e1a6681` / `9537a769`. Device diagnostics expose the
+  same values.
 - Stable screen IDs and configured ordering are persisted in host NVS; timed
   screen rotation is disabled and screen changes are swipe-only.
 - Clock and Meteo routes are namespaced under `/clock/` and `/meteo/` while

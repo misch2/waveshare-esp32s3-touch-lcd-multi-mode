@@ -12,6 +12,7 @@
 
 #include "AppConfig.h"
 #include "AppConfigStore.h"
+#include "BuildProvenance.h"
 #include "ClockConfig.h"
 #include "ClockDataService.h"
 #include "ClockScreen.h"
@@ -328,6 +329,21 @@ size_t loadCombinedDiagnosticsForWeb(char* out, size_t capacity) {
   document["ipAddress"] = network_host::ipAddress();
   document["displayForcedOff"] = displayHostForcedOff();
   document["resetReason"] = resetReasonText();
+
+  JsonArray components = document["componentProvenance"].to<JsonArray>();
+  for (std::size_t index = 0; index < app_core::kComponentProvenanceCount;
+       ++index) {
+    const app_core::ComponentProvenance& source =
+        app_core::kComponentProvenance[index];
+    JsonObject component = components.add<JsonObject>();
+    component["id"] = source.id;
+    component["displayName"] = source.displayName;
+    component["upstreamUrl"] = source.upstreamUrl;
+    component["upstreamRef"] = source.upstreamRef;
+    component["upstreamBase"] = source.upstreamBase;
+    component["forkUrl"] = source.forkUrl;
+    component["forkPin"] = source.forkPin;
+  }
 
   const ScreenModule* active = screenManager.active();
   document["activeScreen"] = active != nullptr ? active->id() : "";

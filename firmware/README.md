@@ -7,6 +7,93 @@ integration seams are kept explicit in those pinned source trees. The firmware
 has one LVGL/display/touch owner, a compile-time screen registry, stable screen
 IDs and a central gesture recognizer.
 
+## Upstream provenance and update workflow
+
+`UPSTREAMS.json` in the repository root is the source of truth for each
+submodule's exact fork pin, incorporated upstream base and repository URLs.
+The present bases are contained by upstream `waveshare-hodiny` `v1.5.5` and
+MeteoPlaneRadar `v0.6.3`. The generated `BuildProvenance.h` exposes the same
+immutable values through the host diagnostics endpoint and landing page.
+
+Update one submodule at a time. Fetch its `fork` and `upstream` remotes, branch
+from the current `fork/main` as `sync/upstream-YYYY-MM-DD`, and explicitly
+merge the intended upstream branch. Test the standalone upstream project,
+push/review the sync branch in the fork, then update the parent gitlink and
+only the affected integration adapters. Run the native tests, combined build
+and physical smoke test before recording the new pins and SHA range in the
+release changelog.
+
+The following PowerShell example updates `MeteoPlaneRadar`; replace the module
+name with `waveshare-hodiny` to update the clock component. Run it from the
+repository root. It only creates a local review branch until the final `push`:
+
+```powershell
+$module = 'MeteoPlaneRadar'
+$upstreamBranch = 'main'
+$syncBranch = "sync/upstream-$(Get-Date -Format 'yyyy-MM-dd')"
+
+# Start clean and inspect what each side contributes.
+git -C $module status --short
+git -C $module fetch fork --prune
+git -C $module fetch upstream --prune
+git -C $module log --left-right --cherry-pick --oneline `
+  "fork/main...upstream/$upstreamBranch"
+
+# Create an explicit, reviewable upstream-sync merge.
+git -C $module switch main
+git -C $module pull --ff-only fork main
+git -C $module switch -c $syncBranch
+git -C $module merge --no-ff "upstream/$upstreamBranch" `
+  -m "Merge upstream/$upstreamBranch into fork/main"
+
+# Resolve conflicts, run the standalone project's validation, then publish the
+# review branch to your fork. Merge its PR into fork/main only after review.
+git -C $module status
+git -C $module push -u fork HEAD
+```
+
+After that fork PR has merged, advance the combined project's pin and record
+the provenance before creating the combined-firmware PR:
+
+```powershell
+$module = 'MeteoPlaneRadar'
+$upstreamBranch = 'main'
+
+git -C $module switch main
+git -C $module pull --ff-only fork main
+git -C $module rev-parse HEAD                 # new forkPin for UPSTREAMS.json
+git -C $module merge-base HEAD "upstream/$upstreamBranch"  # upstreamBase
+
+# Edit UPSTREAMS.json with those two full SHAs, then regenerate and stage the
+# next parent gitlink before validating it.
+python firmware/extra_scripts/generate_build_provenance.py
+git add $module UPSTREAMS.json firmware/lib/app_core/include/BuildProvenance.h
+./scripts/Test-UpstreamProvenance.ps1
+
+# Complete the integration validation before committing the new gitlink.
+g++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/lib/app_core/include `
+  -Iwaveshare-hodiny/WaveshareHodiny firmware/lib/app_core/src/AppConfig.cpp `
+  firmware/lib/app_core/src/GestureRecognizer.cpp `
+  firmware/lib/app_core/src/MeteoRadarConfig.cpp `
+  firmware/lib/app_core/src/ScreenManager.cpp `
+  waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp `
+  firmware/test/native/test_runner.cpp -o firmware/test/native/build/app_core_tests.exe
+firmware/test/native/build/app_core_tests.exe
+pio run -d firmware -e waveshare-multi-mode
+git diff --check
+```
+
+Do not use `git submodule update --remote`, which follows the fork URL without
+the review step, and do not rebase published `fork/main`, because released
+combined-firmware commits must retain valid historic gitlinks. After changing
+a pin, update `UPSTREAMS.json` and run from the repository root:
+
+```powershell
+./scripts/Test-UpstreamProvenance.ps1
+```
+
+## Configuration and functionality
+
 Current gesture contract:
 
 - horizontal swipe: previous/next screen;
