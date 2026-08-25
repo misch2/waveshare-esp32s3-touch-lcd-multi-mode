@@ -15,3 +15,11 @@ Mezi obrazovkami se přepíná vodorovným swipem. Svislý swipe mění rozsah r
 4. Vyberte `ESP32-S3`, stažený soubor `-factory.bin` a spusťte nahrání.
 
 Soubor `-ota.bin` je určený pouze pro ruční aktualizaci z webového rozhraní již běžícího firmwaru.
+
+## Krabička
+
+Zkusil jsem případně navrhnout i alternativní krabičku s USBčkem vzadu místo na boku:
+
+- [Printables](https://www.printables.com/model/1819205-enclosure-for-waveshare-esp32-s3-touch-lcd-21)
+
+<img width="1600" height="900" alt="image" src="https://github.com/user-attachments/assets/358b3ec2-7ede-432d-a367-0d933ba56047" />
