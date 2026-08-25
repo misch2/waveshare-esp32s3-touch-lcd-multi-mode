@@ -2,3 +2,5 @@
 firmware/.pio/
 firmware/build/
 firmware/test/native/build/
+__pycache__/
+*.py[cod]

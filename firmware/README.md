@@ -15,66 +15,45 @@ The present bases are contained by upstream `waveshare-hodiny` `v1.5.5` and
 MeteoPlaneRadar `v0.6.3`. The generated `BuildProvenance.h` exposes the same
 immutable values through the host diagnostics endpoint and landing page.
 
-Update one submodule at a time. Fetch its `fork` and `upstream` remotes, branch
-from the current `fork/main` as `sync/upstream-YYYY-MM-DD`, and explicitly
-merge the intended upstream branch. Test the standalone upstream project,
-push/review the sync branch in the fork, then update the parent gitlink and
-only the affected integration adapters. Run the native tests, combined build
-and physical smoke test before recording the new pins and SHA range in the
-release changelog.
+Update one submodule at a time with the two dependency-free Python commands
+below. They read the repository URLs, branches and recorded pins from
+`UPSTREAMS.json`, reject dirty or divergent state, and never push or commit.
 
-The following PowerShell example updates `MeteoPlaneRadar`; replace the module
-name with `waveshare-hodiny` to update the clock component. Run it from the
-repository root. It only creates a local review branch until the final `push`:
+First prepare an explicit merge on a local review branch (use
+`meteo-plane-radar` or `waveshare-hodiny`):
 
 ```powershell
-$module = 'MeteoPlaneRadar'
-$upstreamBranch = 'main'
-$syncBranch = "sync/upstream-$(Get-Date -Format 'yyyy-MM-dd')"
-
-# Start clean and inspect what each side contributes.
-git -C $module status --short
-git -C $module fetch fork --prune
-git -C $module fetch upstream --prune
-git -C $module log --left-right --cherry-pick --oneline `
-  "fork/main...upstream/$upstreamBranch"
-
-# Create an explicit, reviewable upstream-sync merge.
-git -C $module switch main
-git -C $module pull --ff-only fork main
-git -C $module switch -c $syncBranch
-git -C $module merge --no-ff "upstream/$upstreamBranch" `
-  -m "Merge upstream/$upstreamBranch into fork/main"
-
-# Resolve conflicts, run the standalone project's validation, then publish the
-# review branch to your fork. Merge its PR into fork/main only after review.
-git -C $module status
-git -C $module push -u fork HEAD
+python scripts/prepare_upstream_update.py meteo-plane-radar
 ```
 
-After that fork PR has merged, advance the combined project's pin and record
-the provenance before creating the combined-firmware PR:
+The command verifies or adds the expected `fork` and `upstream` remotes,
+fetches them, fast-forwards local `main` exactly to `fork/main`, prints the
+fork/upstream divergence, creates a dated `sync/...` branch and performs the
+non-fast-forward upstream merge. It highlights changed configuration, public
+headers, display/touch, screen and web paths for adapter review. If conflicts
+occur, the merge is deliberately left in progress for manual resolution.
+`--dry-run` prints the planned mutations without fetching or changing refs.
+
+Review the diff and the integration adapters, resolve and commit any conflicts,
+run the upstream project's standalone validation, then push the review branch
+and merge its PR into the fork. Pushing and PR creation stay manual so the
+review gate cannot be bypassed by the helper.
+
+After the fork PR has merged, finalize the combined-repository pin:
 
 ```powershell
-$module = 'MeteoPlaneRadar'
-$upstreamBranch = 'main'
-
-git -C $module switch main
-git -C $module pull --ff-only fork main
-git -C $module rev-parse HEAD                 # new forkPin for UPSTREAMS.json
-git -C $module merge-base HEAD "upstream/$upstreamBranch"  # upstreamBase
-
-# Edit UPSTREAMS.json with those two full SHAs, then regenerate and stage the
-# next parent gitlink before validating it.
-python firmware/extra_scripts/generate_build_provenance.py
-git add $module UPSTREAMS.json firmware/lib/app_core/include/BuildProvenance.h
-./scripts/Test-UpstreamProvenance.ps1
-
-# Complete the integration validation before committing the new gitlink.
-python scripts/test_native_app_core.py
-pio run -d firmware -e waveshare-multi-mode
-git diff --check
+python scripts/finalize_upstream_pin.py meteo-plane-radar
+python scripts/test_combined_firmware.py
 ```
+
+The finalize command fetches both remotes, accepts only a clean fork tip that
+local `main` can fast-forward to exactly, calculates the incorporated upstream
+base, updates only the selected `UPSTREAMS.json` entry, regenerates
+`BuildProvenance.h`, stages the manifest/header/gitlink and validates all staged
+provenance. It does not commit. The combined validation covers native tests,
+staged provenance, the PlatformIO build and image/worktree checks; the required
+physical display, touch, gesture, network and web smoke test remains a separate
+manual gate and must be recorded explicitly.
 
 Do not use `git submodule update --remote`, which follows the fork URL without
 the review step, and do not rebase published `fork/main`, because released
@@ -82,8 +61,10 @@ combined-firmware commits must retain valid historic gitlinks. After changing
 a pin, update `UPSTREAMS.json` and run from the repository root:
 
 ```powershell
-./scripts/Test-UpstreamProvenance.ps1
+python scripts/test_upstream_provenance.py
 ```
+
+`scripts/Test-UpstreamProvenance.ps1` remains as a compatibility wrapper.
 
 ## Configuration and functionality
 

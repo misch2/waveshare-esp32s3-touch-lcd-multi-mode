@@ -43,21 +43,8 @@ jobs:
       - name: Install PlatformIO
         run: python -m pip install "platformio==${PLATFORMIO_CORE_VERSION}"
 
-      - name: Run native host tests
-        run: python scripts/test_native_app_core.py
-
-      - name: Build firmware
-        run: pio run -d firmware -e waveshare-multi-mode
-
-      - name: Verify firmware images
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s firmware/.pio/build/waveshare-multi-mode/firmware.bin
-          test -s firmware/.pio/build/waveshare-multi-mode/firmware.factory.bin
-          test "$(stat -c%s firmware/.pio/build/waveshare-multi-mode/firmware.bin)" -le 6291456
-          grep -aFq "waveshare-multi-mode-screen:manual-ota:v1" \
-            firmware/.pio/build/waveshare-multi-mode/firmware.bin
+      - name: Validate combined firmware
+        run: python scripts/test_combined_firmware.py
 
       - name: Upload firmware images
         uses: actions/upload-artifact@v4

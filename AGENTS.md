@@ -517,7 +517,20 @@ when memory-heavy production renderers are connected.
 
 ## Updating a submodule
 
-Update one submodule at a time:
+Use the guarded helpers from the repository root and update one submodule at a
+time:
+
+```powershell
+python scripts/prepare_upstream_update.py <component-id>
+# Review, standalone-test, push and merge the fork PR.
+python scripts/finalize_upstream_pin.py <component-id>
+python scripts/test_combined_firmware.py
+```
+
+The prepare helper creates the explicit upstream merge review branch. The
+finalize helper accepts the merged fork tip, updates only that component's
+manifest entry and stages/validates its provenance. Neither helper pushes or
+commits. Preserve these review gates:
 
 1. Record the old and proposed new commit.
 2. Review upstream changes that touch wrapped files, public functions,
@@ -536,22 +549,22 @@ change. Keep combined and standalone build paths usable.
 
 ## Validation
 
-Run the dependency-free host tests with the cross-platform repository script:
+Run the complete non-hardware validation from the repository root:
+
+```powershell
+python scripts/test_combined_firmware.py
+```
+
+This runs the dependency-free native tests, staged upstream-provenance checks,
+the combined PlatformIO build, firmware image size/identity checks,
+`git diff --check`, and clean-worktree checks for both submodules. Use
+`--skip-native` or `--skip-build` only when that step was already completed
+against the same checkout; provenance and image checks always run.
+
+To run only the dependency-free native tests:
 
 ```powershell
 python scripts/test_native_app_core.py
-```
-
-Expected output:
-
-```text
-All native app-core tests passed
-```
-
-Build the hardware firmware with:
-
-```powershell
-pio run -d firmware -e waveshare-multi-mode
 ```
 
 The validated factory image is written to:
@@ -560,7 +573,6 @@ The validated factory image is written to:
 firmware/.pio/build/waveshare-multi-mode/firmware.factory.bin
 ```
 
-Also run `git diff --check` and confirm both submodules have a clean worktree.
 Compilation alone is not sufficient after display, touch, partition, PSRAM or
 network changes. Perform a physical smoke test and state explicitly whether it
 was done.
