@@ -71,9 +71,7 @@ git add $module UPSTREAMS.json firmware/lib/app_core/include/BuildProvenance.h
 ./scripts/Test-UpstreamProvenance.ps1
 
 # Complete the integration validation before committing the new gitlink.
-python scripts/test_native_app_core.py
-pio run -d firmware -e waveshare-multi-mode
-git diff --check
+python scripts/test_combined_firmware.py
 ```
 
 Do not use `git submodule update --remote`, which follows the fork URL without

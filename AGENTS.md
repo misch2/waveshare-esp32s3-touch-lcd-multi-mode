@@ -536,22 +536,21 @@ change. Keep combined and standalone build paths usable.
 
 ## Validation
 
-Run the dependency-free host tests with the cross-platform repository script:
+Run the complete non-hardware validation from the repository root:
+
+```powershell
+python scripts/test_combined_firmware.py
+```
+
+This runs the dependency-free native tests, the combined PlatformIO build,
+firmware image size/identity checks, `git diff --check`, and clean-worktree
+checks for both submodules. Use `--skip-native` or `--skip-build` only when that
+step was already completed against the same checkout; image checks always run.
+
+To run only the dependency-free native tests:
 
 ```powershell
 python scripts/test_native_app_core.py
-```
-
-Expected output:
-
-```text
-All native app-core tests passed
-```
-
-Build the hardware firmware with:
-
-```powershell
-pio run -d firmware -e waveshare-multi-mode
 ```
 
 The validated factory image is written to:
@@ -560,7 +559,6 @@ The validated factory image is written to:
 firmware/.pio/build/waveshare-multi-mode/firmware.factory.bin
 ```
 
-Also run `git diff --check` and confirm both submodules have a clean worktree.
 Compilation alone is not sufficient after display, touch, partition, PSRAM or
 network changes. Perform a physical smoke test and state explicitly whether it
 was done.

@@ -73,11 +73,8 @@ jobs:
             exit 1
           fi
 
-      - name: Run native host tests
-        run: python scripts/test_native_app_core.py
-
-      - name: Build firmware
-        run: pio run -d firmware -e waveshare-multi-mode
+      - name: Validate combined firmware
+        run: python scripts/test_combined_firmware.py
 
       - name: Prepare release assets
         shell: bash
