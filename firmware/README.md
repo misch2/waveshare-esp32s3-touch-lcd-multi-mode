@@ -71,14 +71,7 @@ git add $module UPSTREAMS.json firmware/lib/app_core/include/BuildProvenance.h
 ./scripts/Test-UpstreamProvenance.ps1
 
 # Complete the integration validation before committing the new gitlink.
-g++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/lib/app_core/include `
-  -Iwaveshare-hodiny/WaveshareHodiny firmware/lib/app_core/src/AppConfig.cpp `
-  firmware/lib/app_core/src/GestureRecognizer.cpp `
-  firmware/lib/app_core/src/MeteoRadarConfig.cpp `
-  firmware/lib/app_core/src/ScreenManager.cpp `
-  waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp `
-  firmware/test/native/test_runner.cpp -o firmware/test/native/build/app_core_tests.exe
-firmware/test/native/build/app_core_tests.exe
+python scripts/test_native_app_core.py
 pio run -d firmware -e waveshare-multi-mode
 git diff --check
 ```

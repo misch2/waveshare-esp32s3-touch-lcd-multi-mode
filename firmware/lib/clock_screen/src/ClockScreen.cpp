@@ -3,9 +3,14 @@
 #include <cstdio>
 #include <cstring>
 
+#include "ClockConfig.h"
 #include "ClockDashboard.h"
+#include "ClockWeatherAnimationPolicy.h"
+#include "WeatherAnimationService.h"
 
 namespace {
+static_assert(app_core::kClockWeatherIconStyleMonochrome ==
+              CLOCK_WEATHER_ICON_STYLE_MONOCHROME);
 ClockScreen* callbackTarget = nullptr;
 
 const char* kCzechWeekdays[] = {
@@ -79,6 +84,21 @@ void ClockScreen::hide() {
 void ClockScreen::tick(uint32_t nowMs) {
   if (!initialized_ || !visible_) return;
 
+  app_core::ClockWeatherAnimationPolicy animationPolicy;
+  animationPolicy.configuredEnabled = config_.animatedWeatherIcons;
+  animationPolicy.openMeteo =
+      config_.dataSource == CLOCK_DATA_SOURCE_OPEN_METEO;
+  animationPolicy.leftUsesWeather =
+      std::strcmp(config_.leftSide.icon, "weather") == 0;
+  animationPolicy.rightUsesWeather =
+      std::strcmp(config_.rightSide.icon, "weather") == 0;
+  animationPolicy.nightMode = clockDashboardNightModeEnabled();
+  animationPolicy.configuredStyle = config_.weatherIconStyle;
+  const app_core::ClockWeatherAnimationDecision animationDecision =
+      app_core::selectClockWeatherAnimation(animationPolicy);
+  weatherAnimationServiceLoop(latestWeatherCode_, latestWeatherIsDay_,
+                              animationDecision.effectiveStyle,
+                              animationDecision.enabled);
   clockDashboardLoop();
   (void)nowMs;
 }
@@ -211,6 +231,8 @@ void ClockScreen::updateLocalTime(const std::tm& localTime) {
 
 void ClockScreen::updateValues(const ClockValues& values) {
   if (!initialized_) return;
+  latestWeatherCode_ = values.weatherCode;
+  latestWeatherIsDay_ = values.weatherIsDay;
   clockDashboardUpdate(values);
 }
 

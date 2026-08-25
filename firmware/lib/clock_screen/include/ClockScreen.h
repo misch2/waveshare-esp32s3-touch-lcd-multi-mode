@@ -71,6 +71,8 @@ class ClockScreen final : public ScreenModule {
   bool visible_ = false;
   bool lastWifiConnected_ = false;
   char lastWifiAddress_[16] = {};
+  int latestWeatherCode_ = -1;
+  bool latestWeatherIsDay_ = true;
   int64_t lastPresentedSecond_ = -1;
   bool configSavePending_ = false;
   uint8_t pendingWebMode_ = 0;

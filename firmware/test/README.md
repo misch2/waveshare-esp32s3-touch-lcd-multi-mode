@@ -23,24 +23,16 @@ The web-route tests cover the combined Meteo defaults (`/meteo/` and
 callback presence helpers (including status/access callbacks), callback pointer
 assignment/invocation, and the `MeteoWebOptions` compatibility alias.
 
-From the repository root, build and run it with:
+From the repository root, build and run it with the cross-platform script:
 
 ```text
-g++ -std=c++17 -Wall -Wextra -Werror ^
-  -Ifirmware/lib/app_core/include ^
-  -Iwaveshare-hodiny/WaveshareHodiny ^
-  firmware/lib/app_core/src/AppConfig.cpp ^
-  firmware/lib/app_core/src/GestureRecognizer.cpp ^
-  firmware/lib/app_core/src/MeteoRadarConfig.cpp ^
-  firmware/lib/app_core/src/ScreenManager.cpp ^
-  waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp ^
-  firmware/test/native/test_runner.cpp ^
-  -o firmware/test/native/build/app_core_tests.exe
-firmware\test\native\build\app_core_tests.exe
+python scripts/test_native_app_core.py
 ```
 
-On a POSIX shell, replace the continuation `^` characters with `\` and use
-`./firmware/test/native/build/app_core_tests` as the executable path.
+The script resolves paths from its own location, creates the native build
+directory when needed, stops on compilation or test failure, and runs the
+resulting platform-specific executable. Set `CXX` to use a compiler other than
+`g++`. The same script is used by the Linux GitHub runners.
 
 The test source intentionally uses only fixed-size DTOs and the public screen
 module interfaces, so it can remain useful while the hardware adapters and

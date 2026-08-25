@@ -44,21 +44,7 @@ jobs:
         run: python -m pip install "platformio==${PLATFORMIO_CORE_VERSION}"
 
       - name: Run native host tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p firmware/test/native/build
-          g++ -std=c++17 -Wall -Wextra -Werror \
-            -Ifirmware/lib/app_core/include \
-            -Iwaveshare-hodiny/WaveshareHodiny \
-            firmware/lib/app_core/src/AppConfig.cpp \
-            firmware/lib/app_core/src/GestureRecognizer.cpp \
-            firmware/lib/app_core/src/MeteoRadarConfig.cpp \
-            firmware/lib/app_core/src/ScreenManager.cpp \
-            waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp \
-            firmware/test/native/test_runner.cpp \
-            -o firmware/test/native/build/app_core_tests
-          firmware/test/native/build/app_core_tests
+        run: python scripts/test_native_app_core.py
 
       - name: Build firmware
         run: pio run -d firmware -e waveshare-multi-mode
