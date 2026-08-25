@@ -60,6 +60,7 @@ def main() -> None:
 
     if not args.skip_native:
         run([sys.executable, str(SCRIPTS_DIRECTORY / "test_native_app_core.py")])
+    run([sys.executable, str(SCRIPTS_DIRECTORY / "test_upstream_provenance.py")])
     if not args.skip_build:
         run(
             [

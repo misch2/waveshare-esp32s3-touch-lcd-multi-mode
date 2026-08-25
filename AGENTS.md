@@ -517,7 +517,20 @@ when memory-heavy production renderers are connected.
 
 ## Updating a submodule
 
-Update one submodule at a time:
+Use the guarded helpers from the repository root and update one submodule at a
+time:
+
+```powershell
+python scripts/prepare_upstream_update.py <component-id>
+# Review, standalone-test, push and merge the fork PR.
+python scripts/finalize_upstream_pin.py <component-id>
+python scripts/test_combined_firmware.py
+```
+
+The prepare helper creates the explicit upstream merge review branch. The
+finalize helper accepts the merged fork tip, updates only that component's
+manifest entry and stages/validates its provenance. Neither helper pushes or
+commits. Preserve these review gates:
 
 1. Record the old and proposed new commit.
 2. Review upstream changes that touch wrapped files, public functions,
@@ -542,10 +555,11 @@ Run the complete non-hardware validation from the repository root:
 python scripts/test_combined_firmware.py
 ```
 
-This runs the dependency-free native tests, the combined PlatformIO build,
-firmware image size/identity checks, `git diff --check`, and clean-worktree
-checks for both submodules. Use `--skip-native` or `--skip-build` only when that
-step was already completed against the same checkout; image checks always run.
+This runs the dependency-free native tests, staged upstream-provenance checks,
+the combined PlatformIO build, firmware image size/identity checks,
+`git diff --check`, and clean-worktree checks for both submodules. Use
+`--skip-native` or `--skip-build` only when that step was already completed
+against the same checkout; provenance and image checks always run.
 
 To run only the dependency-free native tests:
 
