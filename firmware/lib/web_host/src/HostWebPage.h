@@ -27,6 +27,7 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
     .disabled{opacity:.65}.disabled .state{color:#9fb7c0}
     .versions{display:grid;gap:10px;margin-top:12px}.version{padding:12px;background:#081014;border-radius:10px}
     .version strong,.version code{display:block}.version code{margin-top:4px;color:#bce9f5;word-break:break-all}
+    .version code a{margin:0;padding:0;background:none;color:inherit;text-decoration:underline;text-underline-offset:2px}
   </style>
 </head>
 <body>
@@ -116,6 +117,17 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
 
       function shortSha(value) { return typeof value === 'string' ? value.slice(0, 12) : ''; }
 
+      function commitLink(repositoryUrl, sha, label) {
+        const link = document.createElement('a');
+        link.textContent = label;
+        if (typeof repositoryUrl === 'string' && repositoryUrl && typeof sha === 'string' && sha) {
+          link.href = repositoryUrl.replace(/\/$/, '') + '/commit/' + encodeURIComponent(sha);
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+        }
+        return link;
+      }
+
       function renderComponentVersions(data) {
         const components = data && data.componentProvenance;
         if (!Array.isArray(components) || components.length === 0) return;
@@ -126,9 +138,10 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
           const name = document.createElement('strong');
           name.textContent = component.displayName || component.id || 'Komponenta';
           const pin = document.createElement('code');
-          pin.textContent = 'Fork pin: ' + shortSha(component.forkPin);
+          pin.append('Fork pin: ', commitLink(component.forkUrl, component.forkPin, shortSha(component.forkPin)));
           const upstream = document.createElement('code');
-          upstream.textContent = 'Upstream ' + (component.upstreamRef || '') + ': ' + shortSha(component.upstreamBase);
+          upstream.append('Upstream ' + (component.upstreamRef || '') + ': ',
+            commitLink(component.upstreamUrl, component.upstreamBase, shortSha(component.upstreamBase)));
           item.append(name, pin, upstream);
           componentVersionsList.appendChild(item);
         });
