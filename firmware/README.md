@@ -10,10 +10,12 @@ IDs and a central gesture recognizer.
 ## Upstream provenance and update workflow
 
 `UPSTREAMS.json` in the repository root is the source of truth for each
-submodule's exact fork pin, incorporated upstream base and repository URLs.
-The present bases are contained by upstream `waveshare-hodiny` `v1.5.5` and
-MeteoPlaneRadar `v0.6.3`. The generated `BuildProvenance.h` exposes the same
-immutable values through the host diagnostics endpoint and landing page.
+submodule's exact fork pin, incorporated upstream base, optional exact release
+tag and repository URLs. The present bases are exactly tagged upstream as
+`waveshare-hodiny` `v1.5.5` and MeteoPlaneRadar `v0.6.3`. The generated
+`BuildProvenance.h` exposes the same build-time provenance through the host
+diagnostics endpoint and landing page; the commit remains the immutable
+identity.
 
 Update one submodule at a time with the two dependency-free Python commands
 below. They read the repository URLs, branches and recorded pins from

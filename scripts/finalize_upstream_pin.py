@@ -13,6 +13,7 @@ from upstream_update_common import (
     UpstreamUpdateError,
     component_path,
     ensure_remote,
+    exact_upstream_tag,
     full_commit,
     git,
     git_output,
@@ -86,9 +87,14 @@ def main() -> int:
         upstream_base = git_output(path, "merge-base", new_pin, upstream_remote_ref)
         if git(path, "merge-base", "--is-ancestor", upstream_base, new_pin, check=False).returncode != 0:
             raise UpstreamUpdateError("Calculated upstream base is not an ancestor of the fork pin.")
+        upstream_tag = exact_upstream_tag(path, "upstream", upstream_base)
 
         component["forkPin"] = new_pin
         component["upstreamBase"] = upstream_base
+        if upstream_tag is None:
+            component.pop("upstreamTag", None)
+        else:
+            component["upstreamTag"] = upstream_tag
         MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         run((sys.executable, "firmware/extra_scripts/generate_build_provenance.py"))
         git(
@@ -103,6 +109,7 @@ def main() -> int:
 
         print(f"\nNew fork pin: {new_pin}")
         print(f"New upstream base: {upstream_base}")
+        print(f"New upstream tag: {upstream_tag or '<none>'}")
         print("Staged parent changes:")
         git(REPOSITORY_ROOT, "diff", "--cached", "--stat", "--", component["path"], "UPSTREAMS.json", GENERATED_HEADER)
         print(
