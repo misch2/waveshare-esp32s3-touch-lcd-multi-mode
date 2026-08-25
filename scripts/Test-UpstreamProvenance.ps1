@@ -13,12 +13,17 @@ if ($manifest.schemaVersion -ne 1 -or $null -eq $manifest.components) {
 }
 
 foreach ($component in $manifest.components) {
-  $gitlink = (& git -C $repositoryRoot ls-tree HEAD -- $component.path)
-  if ($LASTEXITCODE -ne 0 -or $gitlink -notmatch '^160000 commit ([0-9a-f]{40})\s') {
-    throw "Cannot read gitlink for $($component.path)."
+  # The parent commit still points at the previous release while an update is
+  # being validated. Read the staged gitlink so this guard proves precisely
+  # what the next parent commit would record.
+  $gitlink = (& git -C $repositoryRoot ls-files --stage -- $component.path)
+  $gitlinkMatch = [regex]::Match($gitlink, '^160000 ([0-9a-f]{40}) \d+\t')
+  if ($LASTEXITCODE -ne 0 -or -not $gitlinkMatch.Success) {
+    throw "Cannot read staged gitlink for $($component.path). Stage the submodule with git add first."
   }
-  if ($Matches[1] -ne $component.forkPin) {
-    throw "$($component.id): manifest forkPin does not match gitlink (expected $($Matches[1]))."
+  $stagedPin = $gitlinkMatch.Groups[1].Value
+  if ($stagedPin -ne $component.forkPin) {
+    throw "$($component.id): manifest forkPin does not match staged gitlink (expected $stagedPin)."
   }
 
   $checkedOut = (& git -C (Join-Path $repositoryRoot $component.path) rev-parse HEAD).Trim()
