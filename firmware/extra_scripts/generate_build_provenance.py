@@ -37,6 +37,7 @@ def render(manifest):
         "  const char* upstreamUrl;",
         "  const char* upstreamRef;",
         "  const char* upstreamBase;",
+        "  const char* upstreamTag;",
         "  const char* forkUrl;",
         "  const char* forkPin;",
         "};",
@@ -44,8 +45,18 @@ def render(manifest):
         "inline constexpr ComponentProvenance kComponentProvenance[] = {",
     ]
     for component in components:
-        lines.append("    {" + ", ".join(quote(component[field]) for field in (
-            "id", "displayName", "upstreamUrl", "upstreamRef", "upstreamBase", "forkUrl", "forkPin")) + "},")
+        upstream_tag = component.get("upstreamTag")
+        if upstream_tag is not None and (not isinstance(upstream_tag, str) or not upstream_tag):
+            raise ValueError(
+                f"{component.get('id', '<unknown>')}: upstreamTag must be a non-empty string when present"
+            )
+        values = (
+            "id", "displayName", "upstreamUrl", "upstreamRef", "upstreamBase",
+            "forkUrl", "forkPin")
+        rendered_tag = "nullptr" if upstream_tag is None else quote(upstream_tag)
+        rendered_values = [quote(component[field]) for field in values]
+        rendered_values.insert(5, rendered_tag)
+        lines.append("    {" + ", ".join(rendered_values) + "},")
     lines.extend([
         "};",
         "inline constexpr std::size_t kComponentProvenanceCount =",

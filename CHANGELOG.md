@@ -6,6 +6,12 @@ All notable changes to this firmware are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Component versions on the common web page now show an exact recorded
+  upstream release tag when one points at the incorporated upstream commit,
+  while retaining the immutable commit link.
+
 ## [1.0.0] - 2026-08-24
 
 ### Added

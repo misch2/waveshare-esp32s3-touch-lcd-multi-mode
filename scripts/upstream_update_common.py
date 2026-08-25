@@ -66,6 +66,12 @@ def select_component(manifest: dict[str, Any], selector: str) -> dict[str, str]:
         raise UpstreamUpdateError(
             f"Component '{component.get('id', selector)}' is missing: {', '.join(missing)}."
         )
+    upstream_tag = component.get("upstreamTag")
+    if upstream_tag is not None and (not isinstance(upstream_tag, str) or not upstream_tag):
+        raise UpstreamUpdateError(
+            f"Component '{component.get('id', selector)}' has an invalid upstreamTag; "
+            "omit it when the exact upstream commit has no tag."
+        )
     return component
 
 
@@ -171,6 +177,52 @@ def require_clean_parent_files(*paths: str) -> None:
 
 def full_commit(path: Path, revision: str) -> str:
     return git_output(path, "rev-parse", "--verify", f"{revision}^{{commit}}")
+
+
+def exact_upstream_tags(path: Path, remote: str, revision: str) -> list[str]:
+    """Return official remote tags that point exactly at *revision*.
+
+    This deliberately queries the configured upstream remote instead of
+    inspecting local ``refs/tags``. A tag fetched from the fork must never be
+    recorded as an upstream release tag by accident. Annotated tags expose a
+    tag object followed by a peeled commit in ``ls-remote``; lightweight tags
+    expose only the commit, so both forms are handled here.
+    """
+    target = full_commit(path, revision).casefold()
+    result = git(path, "ls-remote", "--tags", remote, capture=True)
+    direct: dict[str, str] = {}
+    peeled: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        object_name, separator, reference = line.partition("\t")
+        if not separator or not reference.startswith("refs/tags/"):
+            continue
+        is_peeled = reference.endswith("^{}")
+        tag_name = reference[len("refs/tags/") : -3 if is_peeled else None]
+        if not tag_name:
+            continue
+        if is_peeled:
+            peeled[tag_name] = object_name.casefold()
+        else:
+            direct[tag_name] = object_name.casefold()
+
+    matches = sorted(
+        tag_name
+        for tag_name in set(direct) | set(peeled)
+        if (peeled.get(tag_name) or direct.get(tag_name)) == target
+    )
+    return matches
+
+
+def exact_upstream_tag(path: Path, remote: str, revision: str) -> str | None:
+    """Return the one exact official tag, or ``None`` when there is no tag."""
+    matches = exact_upstream_tags(path, remote, revision)
+    if len(matches) > 1:
+        raise UpstreamUpdateError(
+            f"Multiple tags on official upstream point exactly at {full_commit(path, revision)}: "
+            + ", ".join(matches)
+            + ". Record a single unambiguous upstream release explicitly."
+        )
+    return matches[0] if matches else None
 
 
 def staged_gitlink(component: dict[str, str]) -> str:

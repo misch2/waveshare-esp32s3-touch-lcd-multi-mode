@@ -140,8 +140,14 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
           const pin = document.createElement('code');
           pin.append('Fork pin: ', commitLink(component.forkUrl, component.forkPin, shortSha(component.forkPin)));
           const upstream = document.createElement('code');
-          upstream.append('Upstream ' + (component.upstreamRef || '') + ': ',
-            commitLink(component.upstreamUrl, component.upstreamBase, shortSha(component.upstreamBase)));
+          upstream.append('Upstream ' + (component.upstreamRef || '') + ': ');
+          if (typeof component.upstreamTag === 'string' && component.upstreamTag) {
+            upstream.append(component.upstreamTag, ' (');
+          }
+          upstream.append(commitLink(component.upstreamUrl, component.upstreamBase, shortSha(component.upstreamBase)));
+          if (typeof component.upstreamTag === 'string' && component.upstreamTag) {
+            upstream.append(')');
+          }
           item.append(name, pin, upstream);
           componentVersionsList.appendChild(item);
         });

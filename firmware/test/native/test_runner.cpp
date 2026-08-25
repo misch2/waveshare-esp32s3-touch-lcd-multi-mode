@@ -65,6 +65,7 @@ void testBuildProvenance() {
       app_core::kComponentProvenance[0];
   CHECK_STREQ(meteo.id, "meteo-plane-radar");
   CHECK_STREQ(meteo.upstreamRef, "main");
+  CHECK_STREQ(meteo.upstreamTag, "v0.6.3");
   CHECK(std::strlen(meteo.upstreamUrl) > 0);
   CHECK(std::strlen(meteo.upstreamBase) == 40);
   CHECK(std::strlen(meteo.forkUrl) > 0);
@@ -74,10 +75,16 @@ void testBuildProvenance() {
       app_core::kComponentProvenance[1];
   CHECK_STREQ(clock.id, "waveshare-hodiny");
   CHECK_STREQ(clock.upstreamRef, "main");
+  CHECK_STREQ(clock.upstreamTag, "v1.5.5");
   CHECK(std::strlen(clock.upstreamUrl) > 0);
   CHECK(std::strlen(clock.upstreamBase) == 40);
   CHECK(std::strlen(clock.forkUrl) > 0);
   CHECK(std::strlen(clock.forkPin) == 40);
+
+  // A component which has no exact upstream tag keeps the optional field null;
+  // callers must continue to use the immutable commit as its identity.
+  app_core::ComponentProvenance untagged{};
+  CHECK(untagged.upstreamTag == nullptr);
 }
 
 void testAppConfigDefaults() {

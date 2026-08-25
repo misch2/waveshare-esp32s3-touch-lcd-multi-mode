@@ -341,6 +341,9 @@ size_t loadCombinedDiagnosticsForWeb(char* out, size_t capacity) {
     component["upstreamUrl"] = source.upstreamUrl;
     component["upstreamRef"] = source.upstreamRef;
     component["upstreamBase"] = source.upstreamBase;
+    if (source.upstreamTag != nullptr && source.upstreamTag[0] != '\0') {
+      component["upstreamTag"] = source.upstreamTag;
+    }
     component["forkUrl"] = source.forkUrl;
     component["forkPin"] = source.forkPin;
   }
