@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "components": [
+    {
+      "id": "meteo-plane-radar",
+      "path": "MeteoPlaneRadar",
+      "displayName": "MeteoPlaneRadar",
+      "upstreamUrl": "https://github.com/petus/MeteoPlaneRadar",
+      "upstreamRef": "main",
+      "upstreamBase": "792ef8d05b0900a81e0f49697b8e72220a89f4a7",
+      "forkUrl": "https://github.com/misch2/MeteoPlaneRadar",
+      "forkPin": "dd77fefd33d6adfa9498a745299e54004cea5694"
+    },
+    {
+      "id": "waveshare-hodiny",
+      "path": "waveshare-hodiny",
+      "displayName": "waveshare-hodiny",
+      "upstreamUrl": "https://github.com/CooLajz/waveshare-hodiny",
+      "upstreamRef": "main",
+      "upstreamBase": "9537a76932fc9269b2a22a5fb90a62785897c680",
+      "forkUrl": "https://github.com/misch2/waveshare-hodiny-fork",
+      "forkPin": "e1a66810aba21504cf14c239022620e595430f83"
+    }
+  ]
+}

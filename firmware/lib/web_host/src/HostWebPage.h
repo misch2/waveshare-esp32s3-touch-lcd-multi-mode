@@ -25,6 +25,8 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
     pre{max-height:260px;overflow:auto;padding:14px;background:#081014;border:1px solid #28414a;border-radius:10px;white-space:pre-wrap;word-break:break-word;color:#bce9f5}
     #restoreMessage{min-height:1.5em;color:#bce9f5}
     .disabled{opacity:.65}.disabled .state{color:#9fb7c0}
+    .versions{display:grid;gap:10px;margin-top:12px}.version{padding:12px;background:#081014;border-radius:10px}
+    .version strong,.version code{display:block}.version code{margin-top:4px;color:#bce9f5;word-break:break-all}
   </style>
 </head>
 <body>
@@ -44,6 +46,12 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
       <a href="/meteo/">Otevřít nastavení MeteoPlaneRadar</a>
     </section>
   </main>
+  <section class="tools" id="componentVersions" hidden>
+    <div class="state">Původ zdrojových komponent</div>
+    <h2>Verze komponent</h2>
+    <p>Exactní fork pin a poslední upstream revize začleněná do tohoto firmware.</p>
+    <div class="versions" id="componentVersionsList"></div>
+  </section>
   <section class="tools">
     <div class="state">Hostitel zařízení</div>
     <h2>Stav, diagnostika a záloha</h2>
@@ -78,6 +86,8 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
       const firmwareUploadButton = document.getElementById('firmwareUploadButton');
       const firmwareProgress = document.getElementById('firmwareProgress');
       const firmwareMessage = document.getElementById('firmwareMessage');
+      const componentVersions = document.getElementById('componentVersions');
+      const componentVersionsList = document.getElementById('componentVersionsList');
 
       function redirectIfUnauthorized(response) {
         if (response.status === 401 || response.status === 423) {
@@ -104,6 +114,27 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
         output.textContent = JSON.stringify(data, null, 2);
       }
 
+      function shortSha(value) { return typeof value === 'string' ? value.slice(0, 12) : ''; }
+
+      function renderComponentVersions(data) {
+        const components = data && data.componentProvenance;
+        if (!Array.isArray(components) || components.length === 0) return;
+        componentVersionsList.textContent = '';
+        components.forEach((component) => {
+          const item = document.createElement('div');
+          item.className = 'version';
+          const name = document.createElement('strong');
+          name.textContent = component.displayName || component.id || 'Komponenta';
+          const pin = document.createElement('code');
+          pin.textContent = 'Fork pin: ' + shortSha(component.forkPin);
+          const upstream = document.createElement('code');
+          upstream.textContent = 'Upstream ' + (component.upstreamRef || '') + ': ' + shortSha(component.upstreamBase);
+          item.append(name, pin, upstream);
+          componentVersionsList.appendChild(item);
+        });
+        componentVersions.hidden = false;
+      }
+
       async function showEndpoint(path) {
         try { showData(await readJson(await fetch(path, {cache:'no-store'}))); }
         catch (error) { output.hidden = false; output.textContent = error.message; }
@@ -111,6 +142,9 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
 
       document.getElementById('statusButton').addEventListener('click', () => showEndpoint('/api/status'));
       document.getElementById('diagnosticsButton').addEventListener('click', () => showEndpoint('/api/diagnostics'));
+
+      fetch('/api/diagnostics', {cache:'no-store'})
+        .then(readJson).then(renderComponentVersions).catch(() => {});
 
       document.getElementById('downloadButton').addEventListener('click', async () => {
         try {

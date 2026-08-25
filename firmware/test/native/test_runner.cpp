@@ -1,4 +1,5 @@
 #include "AppConfig.h"
+#include "BuildProvenance.h"
 #include "CombinedWebRoutes.h"
 #include "ConfigurationWebRoutes.h"
 #include "DayNightLogic.h"
@@ -55,6 +56,25 @@ int failures = 0;
   } while (false)
 
 using app_core::AppConfig;
+
+void testBuildProvenance() {
+  CHECK_EQ(app_core::kComponentProvenanceCount, 2u);
+  const app_core::ComponentProvenance& meteo =
+      app_core::kComponentProvenance[0];
+  CHECK_STREQ(meteo.id, "meteo-plane-radar");
+  CHECK_STREQ(meteo.upstreamRef, "main");
+  CHECK_STREQ(meteo.upstreamBase,
+              "792ef8d05b0900a81e0f49697b8e72220a89f4a7");
+  CHECK_STREQ(meteo.forkPin, "dd77fefd33d6adfa9498a745299e54004cea5694");
+
+  const app_core::ComponentProvenance& clock =
+      app_core::kComponentProvenance[1];
+  CHECK_STREQ(clock.id, "waveshare-hodiny");
+  CHECK_STREQ(clock.upstreamRef, "main");
+  CHECK_STREQ(clock.upstreamBase,
+              "9537a76932fc9269b2a22a5fb90a62785897c680");
+  CHECK_STREQ(clock.forkPin, "e1a66810aba21504cf14c239022620e595430f83");
+}
 
 void testAppConfigDefaults() {
   const AppConfig config = AppConfig::defaults();
@@ -1248,6 +1268,7 @@ void testScreenManagerKeepsLocalGesturesLocal() {
 }  // namespace
 
 int main() {
+  testBuildProvenance();
   testAppConfigDefaults();
   testAppConfigNormalizesAndPreservesOrder();
   testAppConfigFallbackAndEditing();
