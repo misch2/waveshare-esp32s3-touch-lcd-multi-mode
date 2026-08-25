@@ -536,21 +536,10 @@ change. Keep combined and standalone build paths usable.
 
 ## Validation
 
-Run the dependency-free host tests from the repository root:
+Run the dependency-free host tests with the cross-platform repository script:
 
 ```powershell
-g++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/lib/app_core/include `
-  -Ifirmware/test/native/include `
-  -Iwaveshare-hodiny/WaveshareHodiny `
-  firmware/lib/app_core/src/AppConfig.cpp `
-  firmware/lib/app_core/src/ClockWeatherAnimationPolicy.cpp `
-  firmware/lib/app_core/src/GestureRecognizer.cpp `
-  firmware/lib/app_core/src/MeteoRadarConfig.cpp `
-  firmware/lib/app_core/src/ScreenManager.cpp `
-  waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp `
-  firmware/test/native/test_runner.cpp `
-  -o firmware/test/native/build/app_core_tests.exe
-firmware\test\native\build\app_core_tests.exe
+python scripts/test_native_app_core.py
 ```
 
 Expected output:
