@@ -238,6 +238,13 @@ the real upstream schema, checksum, persistence and migrations.
 shim: the reused dashboard references the status API, but the combined build
 does not check for or install releases automatically.
 
+The combined clock adapter compiles the pinned `WeatherAnimationService`
+through a thin translation unit using the upstream public GitHub Pages asset
+path. Its integration-owned HTTP wrapper holds `network_host::FetchLease` for
+the complete GIF request, and the service is ticked only while
+`clock.dashboard` is active. This asset path does not enable the standalone
+automatic firmware-update service.
+
 `firmware/lib/clock_data_service` is a temporary, provenance-marked extraction
 from the pinned `WaveshareHodiny.ino`. It preserves the upstream HTTP clients,
 parsers, intervals and FreeRTOS handoff without compiling the second
@@ -533,8 +540,10 @@ Run the dependency-free host tests from the repository root:
 
 ```powershell
 g++ -std=c++17 -Wall -Wextra -Werror -Ifirmware/lib/app_core/include `
+  -Ifirmware/test/native/include `
   -Iwaveshare-hodiny/WaveshareHodiny `
   firmware/lib/app_core/src/AppConfig.cpp `
+  firmware/lib/app_core/src/ClockWeatherAnimationPolicy.cpp `
   firmware/lib/app_core/src/GestureRecognizer.cpp `
   firmware/lib/app_core/src/MeteoRadarConfig.cpp `
   firmware/lib/app_core/src/ScreenManager.cpp `

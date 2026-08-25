@@ -27,9 +27,11 @@ From the repository root, build and run it with:
 
 ```text
 g++ -std=c++17 -Wall -Wextra -Werror ^
+  -Ifirmware/test/native/include ^
   -Ifirmware/lib/app_core/include ^
   -Iwaveshare-hodiny/WaveshareHodiny ^
   firmware/lib/app_core/src/AppConfig.cpp ^
+  firmware/lib/app_core/src/ClockWeatherAnimationPolicy.cpp ^
   firmware/lib/app_core/src/GestureRecognizer.cpp ^
   firmware/lib/app_core/src/MeteoRadarConfig.cpp ^
   firmware/lib/app_core/src/ScreenManager.cpp ^

@@ -1,5 +1,6 @@
 #include "AppConfig.h"
 #include "BuildProvenance.h"
+#include "ClockWeatherAnimationPolicy.h"
 #include "CombinedWebRoutes.h"
 #include "ConfigurationWebRoutes.h"
 #include "DayNightLogic.h"
@@ -9,6 +10,7 @@
 #include "MeteoRadarConfig.h"
 #include "MeteoWebRoutes.h"
 #include "ScreenManager.h"
+#include "WeatherIconMapping.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -1267,6 +1269,74 @@ void testScreenManagerKeepsLocalGesturesLocal() {
   CHECK_EQ(clock.hideCount, clockHideCount);
 }
 
+void testClockWeatherAnimationPolicy() {
+  app_core::ClockWeatherAnimationPolicy policy;
+  policy.configuredEnabled = true;
+  policy.configuredStyle = 1;
+
+  app_core::ClockWeatherAnimationDecision decision =
+      app_core::selectClockWeatherAnimation(policy);
+  CHECK(!decision.enabled);
+  CHECK_EQ(decision.effectiveStyle, 1);
+
+  policy.openMeteo = true;
+  decision = app_core::selectClockWeatherAnimation(policy);
+  CHECK(decision.enabled);
+  CHECK_EQ(decision.effectiveStyle, 1);
+
+  policy.configuredEnabled = false;
+  decision = app_core::selectClockWeatherAnimation(policy);
+  CHECK(!decision.enabled);
+
+  policy.configuredEnabled = true;
+  policy.openMeteo = false;
+  policy.leftUsesWeather = true;
+  decision = app_core::selectClockWeatherAnimation(policy);
+  CHECK(decision.enabled);
+
+  policy.leftUsesWeather = false;
+  policy.rightUsesWeather = true;
+  policy.configuredStyle = 2;
+  decision = app_core::selectClockWeatherAnimation(policy);
+  CHECK(decision.enabled);
+  CHECK_EQ(decision.effectiveStyle, 2);
+
+  policy.nightMode = true;
+  decision = app_core::selectClockWeatherAnimation(policy);
+  CHECK(decision.enabled);
+  CHECK_EQ(decision.effectiveStyle, 0);
+}
+
+void testUpstreamWeatherAnimationAssetKeys() {
+  char key[48] = {};
+  CHECK(weatherAnimationAssetKey(key, sizeof(key), 800, true,
+                                 CLOCK_WEATHER_ICON_STYLE_FLAT));
+  CHECK_STREQ(key, "flat-clear-day");
+  CHECK(weatherAnimationAssetKey(key, sizeof(key), 800, false,
+                                 CLOCK_WEATHER_ICON_STYLE_LINE));
+  CHECK_STREQ(key, "line-clear-night");
+  CHECK(weatherAnimationAssetKey(key, sizeof(key), 803, true,
+                                 CLOCK_WEATHER_ICON_STYLE_MONOCHROME));
+  CHECK_STREQ(key, "monochrome-overcast-day");
+  CHECK(weatherAnimationAssetKey(key, sizeof(key), 803, false,
+                                 CLOCK_WEATHER_ICON_STYLE_FLAT));
+  CHECK_STREQ(key, "flat-overcast-night");
+  CHECK(weatherAnimationAssetKey(key, sizeof(key), 804, true,
+                                 CLOCK_WEATHER_ICON_STYLE_LINE));
+  CHECK_STREQ(key, "line-overcast");
+  CHECK(weatherAnimationAssetKey(key, sizeof(key), 511, true,
+                                 CLOCK_WEATHER_ICON_STYLE_FLAT));
+  CHECK_STREQ(key, "flat-sleet");
+  CHECK(weatherAnimationAssetKey(key, sizeof(key), 741, true,
+                                 CLOCK_WEATHER_ICON_STYLE_MONOCHROME));
+  CHECK_STREQ(key, "monochrome-mist");
+  CHECK(weatherAnimationAssetKey(key, sizeof(key), 200, true,
+                                 CLOCK_WEATHER_ICON_STYLE_LINE));
+  CHECK_STREQ(key, "line-thunderstorms");
+  CHECK(!weatherAnimationAssetKey(key, sizeof(key), -1, true,
+                                  CLOCK_WEATHER_ICON_STYLE_FLAT));
+}
+
 }  // namespace
 
 int main() {
@@ -1295,6 +1365,8 @@ int main() {
   testScreenManagerSkipsDisabledAndUnregisteredEntries();
   testScreenManagerDoesNotSelfSwitchWithOneEnabledScreen();
   testScreenManagerKeepsLocalGesturesLocal();
+  testClockWeatherAnimationPolicy();
+  testUpstreamWeatherAnimationAssetKeys();
 
   if (failures != 0) {
     std::fprintf(stderr, "%d test assertion(s) failed\n", failures);
