@@ -7,6 +7,31 @@ integration seams are kept explicit in those pinned source trees. The firmware
 has one LVGL/display/touch owner, a compile-time screen registry, stable screen
 IDs and a central gesture recognizer.
 
+## Upstream provenance and update workflow
+
+`UPSTREAMS.json` in the repository root is the source of truth for each
+submodule's exact fork pin, incorporated upstream base and repository URLs.
+The present bases are contained by upstream `waveshare-hodiny` `v1.5.5` and
+MeteoPlaneRadar `v0.6.3`. The generated `BuildProvenance.h` exposes the same
+immutable values through the host diagnostics endpoint and landing page.
+
+Update one submodule at a time. Fetch its `fork` and `upstream` remotes, branch
+from the current `fork/main` as `sync/upstream-YYYY-MM-DD`, and explicitly
+merge the intended upstream branch. Test the standalone upstream project,
+push/review the sync branch in the fork, then update the parent gitlink and
+only the affected integration adapters. Run the native tests, combined build
+and physical smoke test before recording the new pins and SHA range in the
+release changelog.
+
+Do not use `git submodule update --remote`, which follows the fork URL without
+the review step, and do not rebase published `fork/main`, because released
+combined-firmware commits must retain valid historic gitlinks. After changing
+a pin, update `UPSTREAMS.json` and run from the repository root:
+
+```powershell
+./scripts/Test-UpstreamProvenance.ps1
+```
+
 Current gesture contract:
 
 - horizontal swipe: previous/next screen;
