@@ -50,7 +50,6 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
   <section class="tools" id="componentVersions" hidden>
     <div class="state">Původ zdrojových komponent</div>
     <h2>Verze komponent</h2>
-    <p>Exactní fork pin a poslední upstream revize začleněná do tohoto firmware.</p>
     <div class="versions" id="componentVersionsList"></div>
   </section>
   <section class="tools">
@@ -71,7 +70,7 @@ const char HOST_WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
   <section class="tools">
     <div class="state">Ruční aktualizace</div>
     <h2>Nahrát nový firmware</h2>
-    <p>Vyberte aplikační obraz s příponou <strong>.bin</strong>. Název souboru může být libovolný; obsah se ověří před instalací. Aktualizace proběhne až po potvrzení a zařízení se poté restartuje.</p>
+    <p>Vyberte aplikační obraz s příponou <strong>.bin</strong>.</p>
     <input id="firmwareFile" type="file" accept=".bin,application/octet-stream">
     <button id="firmwareUploadButton" type="button" disabled>Nahrát firmware</button>
     <progress id="firmwareProgress" max="100" value="0" hidden></progress>

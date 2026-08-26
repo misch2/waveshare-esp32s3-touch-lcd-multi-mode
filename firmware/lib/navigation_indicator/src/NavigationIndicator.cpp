@@ -49,7 +49,7 @@ bool begin() {
 
   overlay = lv_obj_create(lv_layer_top());
   if (overlay == nullptr) return false;
-  lv_obj_set_size(overlay, LV_HOR_RES_MAX, 36);
+  lv_obj_set_size(overlay, LV_HOR_RES, 36);
   lv_obj_set_pos(overlay, 0, 0);
   lv_obj_set_style_bg_opa(overlay, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(overlay, 0, 0);
@@ -87,7 +87,7 @@ void update(const app_core::AppConfig& config,
 
   if (overlayVisible && unchanged()) return;
 
-  const lv_coord_t startX = LV_HOR_RES_MAX / 2 -
+  const lv_coord_t startX = LV_HOR_RES / 2 -
                              static_cast<lv_coord_t>(model.count() - 1) *
                                  kDotGap / 2;
   for (std::size_t index = 0; index < kMaxDots; ++index) {
