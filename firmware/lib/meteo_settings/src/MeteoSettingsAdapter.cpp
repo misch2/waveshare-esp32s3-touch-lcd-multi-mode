@@ -2,12 +2,15 @@
 
 #include <Arduino.h>
 
+#include "NetworkFetchGate.h"
+
 // Arduino 3.x declares a placeholder BOOT_PIN macro. The pinned Meteo config
 // owns the actual board value; remove the placeholder before including it.
 #ifdef BOOT_PIN
 #undef BOOT_PIN
 #endif
 #include "../../../../MeteoPlaneRadar/MeteoPlaneRadar/Settings.h"
+#include "../../../../MeteoPlaneRadar/MeteoPlaneRadar/GeoIP.h"
 
 extern bool MeteoSettings_ClearLocationForHost();
 
@@ -43,6 +46,15 @@ void stepRadarRange(int step) {
   app_core::MeteoRadarConfig config = radarConfig();
   config.stepRange(step);
   Settings_SetMeteoRange(config.rangeIndex);
+}
+
+GeoIpAttemptResult tryDetectLocation() {
+  if (Settings_HasLocation()) return GeoIpAttemptResult::NotNeeded;
+
+  network_host::FetchLease lease(0);
+  if (!lease) return GeoIpAttemptResult::Busy;
+  return GeoIP_DetectIfNeeded() ? GeoIpAttemptResult::Detected
+                                : GeoIpAttemptResult::Failed;
 }
 
 bool clearLocation() { return MeteoSettings_ClearLocationForHost(); }

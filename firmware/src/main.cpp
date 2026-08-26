@@ -88,6 +88,7 @@ bool meteoWebCommandPending = false;
 bool meteoConfigApplyPending = false;
 bool meteoRestartPending = false;
 uint32_t meteoRestartAt = 0;
+bool geoIpAttemptedWhileConnected = false;
 combined_config::ImportBundle* pendingCombinedImport = nullptr;
 combined_config::ImportBundle* previousCombinedConfig = nullptr;
 bool combinedImportValidated = false;
@@ -779,6 +780,30 @@ void applyPendingMeteoWebWork() {
   }
 }
 
+void applyFirstBootGeoIp() {
+  if (!network_host::connected()) {
+    // One attempt per connection prevents a failing public endpoint from
+    // blocking the UI on every loop. A later reconnect permits one retry.
+    geoIpAttemptedWhileConnected = false;
+    return;
+  }
+  if (geoIpAttemptedWhileConnected) return;
+
+  const meteo_settings::GeoIpAttemptResult result =
+      meteo_settings::tryDetectLocation();
+  if (result == meteo_settings::GeoIpAttemptResult::Busy) return;
+  geoIpAttemptedWhileConnected = true;
+
+  if (result == meteo_settings::GeoIpAttemptResult::Detected) {
+    // Settings_SetLocation persisted through the display-safe storage guard.
+    // Restart once so every upstream cache and renderer starts with the newly
+    // detected coordinates, matching standalone startup ordering.
+    Serial.println("GeoIP location stored; restarting Meteo initialization");
+    meteoRestartPending = true;
+    meteoRestartAt = millis() + 250;
+  }
+}
+
 void openClockSettings() {
   web_host::ensureActive();
 }
@@ -910,6 +935,7 @@ void loop() {
   network_host::loop();
   displayHostLoop();
   meteo_settings::loop();
+  applyFirstBootGeoIp();
 
   clockScreen.updateNetworkStatus(network_host::connected(),
                                   network_host::ipAddress());
