@@ -25,7 +25,8 @@ class ClockScreen final : public ScreenModule {
   explicit ClockScreen(ClockConfig& config,
                        ClockBrightnessPreviewCallback brightnessPreview,
                        ClockSettingsOpenCallback settingsOpen,
-                       ClockShortClickAllowedCallback shortClickAllowed);
+                       ClockShortClickAllowedCallback shortClickAllowed,
+                       const char* firmwareVersion);
 
   const char* id() const override { return "clock.dashboard"; }
   const char* label() const override { return "Clock"; }
@@ -65,6 +66,7 @@ class ClockScreen final : public ScreenModule {
   ClockBrightnessPreviewCallback brightnessPreview_ = nullptr;
   ClockSettingsOpenCallback settingsOpen_ = nullptr;
   ClockShortClickAllowedCallback shortClickAllowed_ = nullptr;
+  const char* firmwareVersion_ = nullptr;
   lv_obj_t* screen_ = nullptr;
   lv_obj_t* returnScreen_ = nullptr;
   bool initialized_ = false;

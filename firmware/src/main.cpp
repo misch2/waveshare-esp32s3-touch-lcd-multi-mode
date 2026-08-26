@@ -54,6 +54,7 @@ ClockDataService clockDataService;
 ClockValues latestClockValues;
 GestureRecognizer gestureRecognizer;
 ScreenManager screenManager(appConfig);
+constexpr char kCombinedFirmwareVersion[] = "1.0.0";
 
 void previewClockBrightness(uint8_t brightness) {
   displayHostSetBrightness(brightness);
@@ -62,7 +63,8 @@ void openClockSettings();
 bool allowClockDashboardShortClick();
 
 ClockScreen clockScreen(clockConfig, previewClockBrightness, openClockSettings,
-                        allowClockDashboardShortClick);
+                        allowClockDashboardShortClick,
+                        kCombinedFirmwareVersion);
 RadarScreen radarScreen;
 ForecastScreen forecastScreen;
 PlanesScreen planesScreen;
@@ -91,7 +93,6 @@ const char* const kRegisteredScreenIds[] = {
     kForecastScreenId,
     kPlanesScreenId,
 };
-constexpr char kCombinedFirmwareVersion[] = "1.0.0";
 
 class PsramJsonAllocator final : public Allocator {
  public:

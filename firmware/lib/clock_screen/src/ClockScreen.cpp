@@ -27,11 +27,13 @@ const char* kCzechMonths[] = {
 ClockScreen::ClockScreen(ClockConfig& config,
                          ClockBrightnessPreviewCallback brightnessPreview,
                          ClockSettingsOpenCallback settingsOpen,
-                         ClockShortClickAllowedCallback shortClickAllowed)
+                         ClockShortClickAllowedCallback shortClickAllowed,
+                         const char* firmwareVersion)
     : config_(config),
       brightnessPreview_(brightnessPreview),
       settingsOpen_(settingsOpen),
-      shortClickAllowed_(shortClickAllowed) {
+      shortClickAllowed_(shortClickAllowed),
+      firmwareVersion_(firmwareVersion) {
   callbackTarget = this;
 }
 
@@ -59,6 +61,9 @@ bool ClockScreen::begin() {
   clockDashboardSetDate("");
   clockDashboardSetTime("--:--");
   clockDashboardSetSecond(60);
+  // The combined image has no release-check/update state. Publish its
+  // host-supplied version as informational dashboard text only.
+  clockDashboardSetFirmwareVersion(firmwareVersion_, false);
 
   if (previousScreen != nullptr && previousScreen != screen_) {
     lv_scr_load(previousScreen);
