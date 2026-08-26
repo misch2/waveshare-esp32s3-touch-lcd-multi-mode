@@ -28,6 +28,7 @@
 #include "ManualFirmwareUpdate.h"
 #include "NetworkHost.h"
 #include "NetworkDiagnostics.h"
+#include "Outside.h"
 #include "PlanesScreen.h"
 #include "RadarScreen.h"
 #include "ScreenManager.h"
@@ -951,5 +952,14 @@ void loop() {
   }
 
   screenManager.tick(millis());
+  const ScreenModule* activeModule = screenManager.active();
+  if (activeModule != nullptr &&
+      (std::strcmp(activeModule->id(), kRadarScreenId) == 0 ||
+       std::strcmp(activeModule->id(), kPlanesScreenId) == 0)) {
+    // Forecast_Tick receives first use of the shared fetch gate while its own
+    // screen is active. Radar and planes still need the upstream status-line
+    // temperature, so service its host-owned fallback here.
+    Outside_Tick();
+  }
   delay(5);
 }
