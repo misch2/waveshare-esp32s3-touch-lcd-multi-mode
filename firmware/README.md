@@ -1,7 +1,7 @@
 # Multi-mode Waveshare firmware
 
 Release versions come from exact annotated `vMAJOR.MINOR.PATCH` Git tags. An
-exact `v1.1.0` tag therefore builds firmware reporting `1.1.0`; untagged builds
+exact `v1.1.1` tag therefore builds firmware reporting `1.1.1`; untagged builds
 report a development version containing the commit hash and optional dirty
 state.
 

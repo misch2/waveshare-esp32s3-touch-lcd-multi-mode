@@ -6,6 +6,8 @@ All notable changes to this firmware are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-26
+
 ### Fixed
 
 - Restored MeteoPlaneRadar's first-boot GeoIP location fallback when no manual
