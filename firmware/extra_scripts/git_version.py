@@ -10,7 +10,6 @@ the version-detection functions can be imported by host-side tests.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import re
 import subprocess
@@ -130,29 +129,18 @@ def detect_version(repository: Path) -> GitVersion:
     return GitVersion(version, commit, dirty, tag)
 
 
-def render_defines(info: GitVersion) -> str:
-    """Render a small C/C++ macro contract for diagnostics and source review."""
-
-    return "\n".join(
-        (
-            "FIRMWARE_VERSION=" + json.dumps(info.version),
-            "FIRMWARE_GIT_HASH=" + json.dumps(info.commit),
-        )
-    )
-
-
 def configure_platformio(env) -> GitVersion:
     """Inject the detected values into a PlatformIO/SCons environment."""
 
     project_dir = Path(env.subst("$PROJECT_DIR")).resolve()
     repository = project_dir.parent
     info = detect_version(repository)
-    print("[build_metadata] FIRMWARE_VERSION = " + info.version)
-    print("[build_metadata] FIRMWARE_GIT_HASH = " + info.commit)
+    print("[build_metadata] COMBINED_FIRMWARE_VERSION = " + info.version)
+    print("[build_metadata] COMBINED_FIRMWARE_GIT_HASH = " + info.commit)
     env.Append(
         CPPDEFINES=[
-            ("FIRMWARE_VERSION", env.StringifyMacro(info.version)),
-            ("FIRMWARE_GIT_HASH", env.StringifyMacro(info.commit)),
+            ("COMBINED_FIRMWARE_VERSION", env.StringifyMacro(info.version)),
+            ("COMBINED_FIRMWARE_GIT_HASH", env.StringifyMacro(info.commit)),
         ]
     )
     return info

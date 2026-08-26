@@ -54,16 +54,16 @@ ClockDataService clockDataService;
 ClockValues latestClockValues;
 GestureRecognizer gestureRecognizer;
 ScreenManager screenManager(appConfig);
-#ifndef FIRMWARE_VERSION
+#ifndef COMBINED_FIRMWARE_VERSION
 // PlatformIO's Git metadata script supplies this for normal builds. Keep a
 // safe value for tooling that compiles this translation unit without PIO.
-#define FIRMWARE_VERSION "0.0.0-dev"
+#define COMBINED_FIRMWARE_VERSION "0.0.0-dev+gunknown"
 #endif
-#ifndef FIRMWARE_GIT_HASH
-#define FIRMWARE_GIT_HASH "unknown"
+#ifndef COMBINED_FIRMWARE_GIT_HASH
+#define COMBINED_FIRMWARE_GIT_HASH "unknown"
 #endif
-constexpr char kCombinedFirmwareVersion[] = FIRMWARE_VERSION;
-constexpr char kCombinedFirmwareCommit[] = FIRMWARE_GIT_HASH;
+constexpr char kCombinedFirmwareVersion[] = COMBINED_FIRMWARE_VERSION;
+constexpr char kCombinedFirmwareCommit[] = COMBINED_FIRMWARE_GIT_HASH;
 
 void previewClockBrightness(uint8_t brightness) {
   displayHostSetBrightness(brightness);
