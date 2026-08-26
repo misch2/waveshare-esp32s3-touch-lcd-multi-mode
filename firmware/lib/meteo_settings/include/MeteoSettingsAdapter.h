@@ -1,11 +1,20 @@
 #pragma once
 
+#include <cstdint>
+
 #include "MeteoRadarConfig.h"
 
 namespace meteo_settings {
 
 using StorageBeginCallback = bool (*)();
 using StorageEndCallback = bool (*)();
+
+enum class GeoIpAttemptResult : std::uint8_t {
+  NotNeeded,
+  Busy,
+  Failed,
+  Detected,
+};
 
 // Loads the canonical MeteoPlaneRadar Settings model. Call before display
 // startup so reads and any upstream migration complete before RGB scanout.
@@ -18,6 +27,10 @@ void setStorageCallbacks(StorageBeginCallback beginCallback,
 
 app_core::MeteoRadarConfig radarConfig();
 void stepRadarRange(int step);
+
+// Preserve the pinned first-boot GeoIP behavior without allowing its HTTP
+// request to overlap another module's network batch.
+GeoIpAttemptResult tryDetectLocation();
 
 // Preserve the upstream "location not configured" state during a combined
 // restore without clearing unrelated Meteo credentials or settings.

@@ -6,6 +6,12 @@ All notable changes to this firmware are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored MeteoPlaneRadar's first-boot GeoIP location fallback when no manual
+  location is stored, serialized through the combined host's network and
+  display-safe storage lifecycles.
+
 ## [1.1.0] - 2026-08-26
 
 ### Added
