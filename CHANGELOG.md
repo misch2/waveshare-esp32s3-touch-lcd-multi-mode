@@ -6,11 +6,44 @@ All notable changes to this firmware are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-26
+
 ### Added
+
+- A host-owned navigation indicator restores the original Meteo screen dots
+  across radar, forecast and aircraft views while following the configured
+  stable-ID order.
+- The combined firmware version is derived from an exact annotated
+  `vMAJOR.MINOR.PATCH` Git tag. Untagged builds identify themselves with their
+  commit hash and dirty-worktree state instead of claiming a release version.
+
+### Fixed
+
+- Meteo radar and aircraft screens now continue refreshing the shared outside
+  temperature instead of leaving the status value stale.
+- The clock settings overlay now displays the combined firmware version.
+
+## [1.0.3] - 2026-08-25
+
+### Changed
 
 - Component versions on the common web page now show an exact recorded
   upstream release tag when one points at the incorporated upstream commit,
   while retaining the immutable commit link.
+
+## [1.0.2] - 2026-08-25
+
+### Fixed
+
+- Restored the clock dashboard's upstream animated weather icons in the
+  combined firmware.
+
+## [1.0.1] - 2026-08-25
+
+### Added
+
+- Recorded exact upstream and fork provenance and added guarded helpers for
+  reviewing and advancing pinned upstream revisions.
 
 ## [1.0.0] - 2026-08-24
 

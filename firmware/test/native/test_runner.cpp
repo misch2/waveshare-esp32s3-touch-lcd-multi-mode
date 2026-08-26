@@ -20,7 +20,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <limits>
+#include <string>
 
 namespace {
 
@@ -1465,6 +1468,52 @@ void testUpstreamWeatherAnimationAssetKeys() {
                                   CLOCK_WEATHER_ICON_STYLE_FLAT));
 }
 
+std::string readNativeTestSource(const char* path) {
+  std::ifstream source(path, std::ios::binary);
+  if (!source) return {};
+  return std::string(std::istreambuf_iterator<char>(source),
+                     std::istreambuf_iterator<char>());
+}
+
+std::string withoutWhitespace(const std::string& value) {
+  std::string compact;
+  compact.reserve(value.size());
+  for (const char character : value) {
+    if (character != ' ' && character != '\t' && character != '\r' &&
+        character != '\n') {
+      compact.push_back(character);
+    }
+  }
+  return compact;
+}
+
+void testCombinedClockFirmwareVersionHandoff() {
+  const std::string clockHeader = readNativeTestSource(
+      "firmware/lib/clock_screen/include/ClockScreen.h");
+  const std::string clockSource = readNativeTestSource(
+      "firmware/lib/clock_screen/src/ClockScreen.cpp");
+  const std::string hostSource = readNativeTestSource("firmware/src/main.cpp");
+
+  // This adapter is intentionally excluded from the dependency-free native
+  // link because it owns the Arduino/LVGL dashboard. Keep its version handoff
+  // as an explicit source contract so a future adapter refactor cannot silently
+  // restore the dashboard's placeholder text.
+  CHECK(clockHeader.find("const char* firmwareVersion") != std::string::npos);
+  CHECK(clockSource.find("firmwareVersion_(firmwareVersion)") !=
+        std::string::npos);
+  CHECK(clockSource.find(
+            "clockDashboardSetFirmwareVersion(firmwareVersion_, false)") !=
+        std::string::npos);
+
+  const std::string compactHost = withoutWhitespace(hostSource);
+  CHECK(compactHost.find("constexprcharkCombinedFirmwareVersion[]=") !=
+        std::string::npos);
+  CHECK(compactHost.find(
+            "ClockScreenclockScreen(clockConfig,previewClockBrightness,"
+            "openClockSettings,allowClockDashboardShortClick,"
+            "kCombinedFirmwareVersion);") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -1498,6 +1547,7 @@ int main() {
   testScreenManagerKeepsLocalGesturesLocal();
   testClockWeatherAnimationPolicy();
   testUpstreamWeatherAnimationAssetKeys();
+  testCombinedClockFirmwareVersionHandoff();
 
   if (failures != 0) {
     std::fprintf(stderr, "%d test assertion(s) failed\n", failures);
