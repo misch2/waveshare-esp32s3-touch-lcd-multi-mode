@@ -8,6 +8,7 @@
 #include "HomeAssistantConnectionPolicy.h"
 #include "GestureRecognizer.h"
 #include "MeteoRadarConfig.h"
+#include "MeteoOutsideTemperaturePolicy.h"
 #include "MeteoWebRoutes.h"
 #include "ScreenManager.h"
 #include "WeatherIconMapping.h"
@@ -364,6 +365,54 @@ void testHomeAssistantBatchPolicy() {
   policy.recordBatchResult(HomeAssistantBatchResult::Success, 900);
   CHECK_EQ(policy.consecutiveTransportFailures(), 0);
   CHECK_EQ(policy.remainingDelayMs(900), 0);
+}
+
+void testMeteoOutsideTemperaturePolicy() {
+  using app_core::MeteoOutsideTemperaturePolicy;
+
+  // A connected host must be able to obtain the first value immediately.  If
+  // that request fails, keep retrying on the short no-data cadence.
+  MeteoOutsideTemperaturePolicy retryPolicy;
+  CHECK(retryPolicy.shouldFetch(0));
+  retryPolicy.noteAttempt(0);
+  CHECK(!retryPolicy.shouldFetch(
+      MeteoOutsideTemperaturePolicy::kRetryIntervalMs - 1));
+  CHECK(retryPolicy.shouldFetch(
+      MeteoOutsideTemperaturePolicy::kRetryIntervalMs));
+
+  // Once a standalone value exists, ordinary refreshes use the longer model
+  // interval.  The unsigned subtraction also keeps the schedule valid over a
+  // millis() wrap.
+  MeteoOutsideTemperaturePolicy refreshPolicy;
+  const std::uint32_t beforeWrap = std::numeric_limits<std::uint32_t>::max() -
+                                   100;
+  CHECK(refreshPolicy.shouldFetch(beforeWrap));
+  refreshPolicy.noteAttempt(beforeWrap);
+  refreshPolicy.noteStandaloneTemperature();
+  CHECK(!refreshPolicy.shouldFetch(
+      beforeWrap + MeteoOutsideTemperaturePolicy::kRefreshIntervalMs - 1));
+  CHECK(refreshPolicy.shouldFetch(
+      beforeWrap + MeteoOutsideTemperaturePolicy::kRefreshIntervalMs));
+
+  // Forecast owns the current-temperature fetch.  Its value is immediately
+  // shared with radar/planes and suppresses duplicate standalone requests for
+  // the documented 30-minute forecast period plus five-minute slack.
+  MeteoOutsideTemperaturePolicy forecastPolicy;
+  constexpr std::uint32_t forecastAt = 1000;
+  forecastPolicy.noteForecastTemperature(forecastAt);
+  CHECK(forecastPolicy.hasTemperature());
+  CHECK(!forecastPolicy.shouldFetch(forecastAt));
+  CHECK(!forecastPolicy.shouldFetch(
+      forecastAt + MeteoOutsideTemperaturePolicy::kForecastFreshIntervalMs -
+      1));
+  CHECK(forecastPolicy.shouldFetch(
+      forecastAt + MeteoOutsideTemperaturePolicy::kForecastFreshIntervalMs));
+
+  // Repeated Forecast ticks refresh the same shared freshness window and must
+  // not turn into one fallback request per host loop iteration.
+  forecastPolicy.noteForecastTemperature(forecastAt + 1000);
+  CHECK(!forecastPolicy.shouldFetch(
+      forecastAt + MeteoOutsideTemperaturePolicy::kForecastFreshIntervalMs));
 }
 
 bool configurationStorageBeginForTest() { return true; }
@@ -1357,6 +1406,7 @@ int main() {
   testDayNightOffsetsAndTransitions();
   testHomeAssistantStoredTokenReusePolicy();
   testHomeAssistantBatchPolicy();
+  testMeteoOutsideTemperaturePolicy();
   testCombinedWebRoutesDefaultsAndCallbacks();
   testConfigurationWebRoutesDefaultsAndCallbacks();
   testMeteoWebRoutesDefaultsAndCallbacks();
