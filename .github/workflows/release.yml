@@ -73,6 +73,20 @@ jobs:
             exit 1
           fi
 
+          expected_version="${RELEASE_TAG#v}"
+          detected_version="$(python firmware/extra_scripts/git_version.py)"
+          if [[ "$detected_version" != "$expected_version" ]]; then
+            echo "Release tag and generated firmware version differ" >&2
+            echo "tag version:      $expected_version" >&2
+            echo "firmware version: $detected_version" >&2
+            exit 1
+          fi
+
+          if ! grep -Eq "^## \\[$expected_version\\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+            echo "CHANGELOG.md has no dated release section for $expected_version" >&2
+            exit 1
+          fi
+
       - name: Validate combined firmware
         run: python scripts/test_combined_firmware.py
 
@@ -90,6 +104,8 @@ jobs:
           test "$(stat -c%s "$build_dir/firmware.bin")" -le 6291456
           grep -aFq "waveshare-multi-mode-screen:manual-ota:v1" \
             "$build_dir/firmware.bin"
+          firmware_version="${GITHUB_REF_NAME#v}"
+          grep -aFq "$firmware_version" "$build_dir/firmware.bin"
 
           ota_name="waveshare-multi-mode-${GITHUB_REF_NAME}-ota.bin"
           factory_name="waveshare-multi-mode-${GITHUB_REF_NAME}-factory.bin"

@@ -1,6 +1,9 @@
 # Multi-mode Waveshare firmware
 
-Current release: **1.0.0**.
+Release versions come from exact annotated `vMAJOR.MINOR.PATCH` Git tags. An
+exact `v1.1.0` tag therefore builds firmware reporting `1.1.0`; untagged builds
+report a development version containing the commit hash and optional dirty
+state.
 
 This is the combined firmware for the two pinned upstream submodules. Small
 integration seams are kept explicit in those pinned source trees. The firmware

@@ -54,7 +54,16 @@ ClockDataService clockDataService;
 ClockValues latestClockValues;
 GestureRecognizer gestureRecognizer;
 ScreenManager screenManager(appConfig);
-constexpr char kCombinedFirmwareVersion[] = "1.0.0";
+#ifndef FIRMWARE_VERSION
+// PlatformIO's Git metadata script supplies this for normal builds. Keep a
+// safe value for tooling that compiles this translation unit without PIO.
+#define FIRMWARE_VERSION "0.0.0-dev"
+#endif
+#ifndef FIRMWARE_GIT_HASH
+#define FIRMWARE_GIT_HASH "unknown"
+#endif
+constexpr char kCombinedFirmwareVersion[] = FIRMWARE_VERSION;
+constexpr char kCombinedFirmwareCommit[] = FIRMWARE_GIT_HASH;
 
 void previewClockBrightness(uint8_t brightness) {
   displayHostSetBrightness(brightness);
@@ -325,6 +334,8 @@ size_t loadCombinedStatusForWeb(char* out, size_t capacity) {
 size_t loadCombinedDiagnosticsForWeb(char* out, size_t capacity) {
   JsonDocument document(&psramJsonAllocator());
   document["ok"] = true;
+  document["firmwareVersion"] = kCombinedFirmwareVersion;
+  document["firmwareCommit"] = kCombinedFirmwareCommit;
   document["configurationAvailable"] = web_host::active();
   document["webMode"] = webModeText();
   document["uptimeMs"] = millis();
@@ -811,7 +822,7 @@ void onTouchSample(bool pressed, int16_t x, int16_t y, uint32_t nowMs) {
 void setup() {
   Serial.begin(115200);
   delay(300);
-  Serial.println("Multi-mode display v1.0.0 starting");
+  Serial.printf("Multi-mode display v%s starting\n", kCombinedFirmwareVersion);
 
   char firmwareConfirmationMessage[96] = {};
   if (!manual_firmware_update::confirmRunningFirmware(
