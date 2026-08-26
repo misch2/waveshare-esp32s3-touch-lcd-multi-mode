@@ -1,0 +1,11 @@
+{
+  "name": "navigation_indicator",
+  "version": "0.1.0",
+  "build": {
+    "includeDir": "include"
+  },
+  "dependencies": {
+    "lvgl/lvgl": "8.3.10",
+    "app_core": "*"
+  }
+}

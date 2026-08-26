@@ -34,6 +34,10 @@ def main() -> None:
         ),
         str(REPOSITORY_ROOT / "firmware/lib/app_core/src/GestureRecognizer.cpp"),
         str(REPOSITORY_ROOT / "firmware/lib/app_core/src/MeteoRadarConfig.cpp"),
+        str(
+            REPOSITORY_ROOT
+            / "firmware/lib/app_core/src/NavigationIndicatorModel.cpp"
+        ),
         str(REPOSITORY_ROOT / "firmware/lib/app_core/src/ScreenManager.cpp"),
         str(REPOSITORY_ROOT / "waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp"),
         str(REPOSITORY_ROOT / "firmware/test/native/test_runner.cpp"),
