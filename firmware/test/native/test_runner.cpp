@@ -9,10 +9,13 @@
 #include "GestureRecognizer.h"
 #include "MeteoRadarConfig.h"
 #include "MeteoOutsideTemperaturePolicy.h"
+#include "NavigationIndicator.h"
 #include "NavigationIndicatorModel.h"
 #include "MeteoWebRoutes.h"
 #include "ScreenManager.h"
 #include "WeatherIconMapping.h"
+
+#include <lvgl.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -239,6 +242,22 @@ void testNavigationIndicatorUsesConfiguredVisibleStableIds() {
            app_core::NavigationIndicatorModel::kNoSelection);
   CHECK(indicator.activeId() == nullptr);
   CHECK(!indicator.isActive(0));
+}
+
+void testNavigationIndicatorUsesSupportedLvglResolution() {
+  // The native build uses a test-only LVGL shim that defines LV_HOR_RES and
+  // intentionally omits LV_HOR_RES_MAX. Compiling the real adapter therefore
+  // guards against accidentally reintroducing the removed LVGL 7 symbol.
+  CHECK(navigation_indicator::begin());
+
+  const AppConfig config = AppConfig::defaults();
+  const char* registeredIds[] = {"clock.dashboard", "meteo.radar",
+                                "meteo.forecast", "meteo.planes"};
+  navigation_indicator::update(config, registeredIds, 4, "clock.dashboard",
+                                true);
+  CHECK_EQ(lvgl_test::objectCount, 1u + AppConfig::kMaxScreens);
+  CHECK_EQ(lvgl_test::objects[0].width, LV_HOR_RES);
+  CHECK_EQ(lvgl_test::objects[0].height, 36);
 }
 
 void testDayNightTransitionTimestampToleranceAndFallback() {
@@ -1456,6 +1475,7 @@ int main() {
   testAppConfigKeepsOneScreenReachable();
   testAppConfigNormalizationRetainsDisabledPlanes();
   testNavigationIndicatorUsesConfiguredVisibleStableIds();
+  testNavigationIndicatorUsesSupportedLvglResolution();
   testDayNightTransitionTimestampToleranceAndFallback();
   testDayNightOffsetsAndTransitions();
   testHomeAssistantStoredTokenReusePolicy();
