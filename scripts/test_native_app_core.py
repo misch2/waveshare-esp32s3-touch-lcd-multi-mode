@@ -26,6 +26,7 @@ def main() -> None:
         "-Werror",
         f"-I{REPOSITORY_ROOT / 'firmware/test/native/include'}",
         f"-I{REPOSITORY_ROOT / 'firmware/lib/app_core/include'}",
+        f"-I{REPOSITORY_ROOT / 'firmware/lib/navigation_indicator/include'}",
         f"-I{REPOSITORY_ROOT / 'waveshare-hodiny/WaveshareHodiny'}",
         str(REPOSITORY_ROOT / "firmware/lib/app_core/src/AppConfig.cpp"),
         str(
@@ -34,6 +35,14 @@ def main() -> None:
         ),
         str(REPOSITORY_ROOT / "firmware/lib/app_core/src/GestureRecognizer.cpp"),
         str(REPOSITORY_ROOT / "firmware/lib/app_core/src/MeteoRadarConfig.cpp"),
+        str(
+            REPOSITORY_ROOT
+            / "firmware/lib/app_core/src/NavigationIndicatorModel.cpp"
+        ),
+        str(
+            REPOSITORY_ROOT
+            / "firmware/lib/navigation_indicator/src/NavigationIndicator.cpp"
+        ),
         str(REPOSITORY_ROOT / "firmware/lib/app_core/src/ScreenManager.cpp"),
         str(REPOSITORY_ROOT / "waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp"),
         str(REPOSITORY_ROOT / "firmware/test/native/test_runner.cpp"),

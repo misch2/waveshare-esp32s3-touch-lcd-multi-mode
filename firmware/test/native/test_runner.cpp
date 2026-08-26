@@ -9,9 +9,13 @@
 #include "GestureRecognizer.h"
 #include "MeteoRadarConfig.h"
 #include "MeteoOutsideTemperaturePolicy.h"
+#include "NavigationIndicator.h"
+#include "NavigationIndicatorModel.h"
 #include "MeteoWebRoutes.h"
 #include "ScreenManager.h"
 #include "WeatherIconMapping.h"
+
+#include <lvgl.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -186,6 +190,74 @@ void testAppConfigNormalizationRetainsDisabledPlanes() {
   CHECK(config.validate());
   CHECK_EQ(config.findScreen("meteo.planes"), 3);
   CHECK(!config.isEnabled("meteo.planes"));
+}
+
+void testNavigationIndicatorUsesConfiguredVisibleStableIds() {
+  AppConfig config = AppConfig::defaults();
+  config.screenCount = 6;
+  std::strcpy(config.screens[0].id, "meteo.forecast");
+  config.screens[0].enabled = 1;
+  std::strcpy(config.screens[1].id, "future.screen");
+  config.screens[1].enabled = 1;
+  std::strcpy(config.screens[2].id, "meteo.radar");
+  config.screens[2].enabled = 0;
+  std::strcpy(config.screens[3].id, "clock.dashboard");
+  config.screens[3].enabled = 1;
+  std::strcpy(config.screens[4].id, "meteo.planes");
+  config.screens[4].enabled = 1;
+  std::strcpy(config.screens[5].id, "future.disabled");
+  config.screens[5].enabled = 0;
+  CHECK(config.validate());
+
+  // Registration order is deliberately different from the persisted order.
+  // The indicator must follow configured order, include only enabled modules,
+  // and omit syntactically valid IDs for modules absent from this firmware.
+  const char* registeredIds[] = {"clock.dashboard", "meteo.radar",
+                                "meteo.forecast", "meteo.planes"};
+  app_core::NavigationIndicatorModel indicator;
+  indicator.refresh(config, registeredIds, 4, "clock.dashboard");
+
+  CHECK_EQ(indicator.count(), 3u);
+  CHECK_STREQ(indicator.idAt(0), "meteo.forecast");
+  CHECK_STREQ(indicator.idAt(1), "clock.dashboard");
+  CHECK_STREQ(indicator.idAt(2), "meteo.planes");
+  CHECK(indicator.idAt(3) == nullptr);
+
+  // Selection is resolved by the stable ID, not by registration or numeric
+  // screen index.
+  CHECK_EQ(indicator.activeIndex(), 1u);
+  CHECK_STREQ(indicator.activeId(), "clock.dashboard");
+  CHECK(!indicator.isActive(0));
+  CHECK(indicator.isActive(1));
+  CHECK(!indicator.isActive(2));
+
+  indicator.refresh(config, registeredIds, 4, "meteo.forecast");
+  CHECK_EQ(indicator.activeIndex(), 0u);
+  CHECK_STREQ(indicator.activeId(), "meteo.forecast");
+  CHECK(indicator.isActive(0));
+  CHECK(!indicator.isActive(1));
+
+  indicator.refresh(config, registeredIds, 4, "future.screen");
+  CHECK_EQ(indicator.activeIndex(),
+           app_core::NavigationIndicatorModel::kNoSelection);
+  CHECK(indicator.activeId() == nullptr);
+  CHECK(!indicator.isActive(0));
+}
+
+void testNavigationIndicatorUsesSupportedLvglResolution() {
+  // The native build uses a test-only LVGL shim that defines LV_HOR_RES and
+  // intentionally omits LV_HOR_RES_MAX. Compiling the real adapter therefore
+  // guards against accidentally reintroducing the removed LVGL 7 symbol.
+  CHECK(navigation_indicator::begin());
+
+  const AppConfig config = AppConfig::defaults();
+  const char* registeredIds[] = {"clock.dashboard", "meteo.radar",
+                                "meteo.forecast", "meteo.planes"};
+  navigation_indicator::update(config, registeredIds, 4, "clock.dashboard",
+                                true);
+  CHECK_EQ(lvgl_test::objectCount, 1u + AppConfig::kMaxScreens);
+  CHECK_EQ(lvgl_test::objects[0].width, LV_HOR_RES);
+  CHECK_EQ(lvgl_test::objects[0].height, 36);
 }
 
 void testDayNightTransitionTimestampToleranceAndFallback() {
@@ -1402,6 +1474,8 @@ int main() {
   testAppConfigFallbackAndEditing();
   testAppConfigKeepsOneScreenReachable();
   testAppConfigNormalizationRetainsDisabledPlanes();
+  testNavigationIndicatorUsesConfiguredVisibleStableIds();
+  testNavigationIndicatorUsesSupportedLvglResolution();
   testDayNightTransitionTimestampToleranceAndFallback();
   testDayNightOffsetsAndTransitions();
   testHomeAssistantStoredTokenReusePolicy();

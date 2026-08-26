@@ -30,6 +30,7 @@
 #include "NetworkDiagnostics.h"
 #include "Outside.h"
 #include "PlanesScreen.h"
+#include "NavigationIndicator.h"
 #include "RadarScreen.h"
 #include "ScreenManager.h"
 #include "TCA9554PWR.h"
@@ -84,6 +85,12 @@ constexpr char kClockScreenId[] = "clock.dashboard";
 constexpr char kPlanesScreenId[] = "meteo.planes";
 constexpr char kRadarScreenId[] = "meteo.radar";
 constexpr char kForecastScreenId[] = "meteo.forecast";
+const char* const kRegisteredScreenIds[] = {
+    kClockScreenId,
+    kRadarScreenId,
+    kForecastScreenId,
+    kPlanesScreenId,
+};
 constexpr char kCombinedFirmwareVersion[] = "1.0.0";
 
 class PsramJsonAllocator final : public Allocator {
@@ -867,6 +874,7 @@ void setup() {
   Set_Backlight(clockConfig.dayBrightness);
 
   if (!displayHostBegin(onTouchSample)) halt("display host init failed");
+  if (!navigation_indicator::begin()) halt("navigation indicator init failed");
   meteo_settings::setStorageCallbacks(beginConfigurationStorageWrite,
                                       endConfigurationStorageWrite);
   displayHostSetBrightness(clockConfig.dayBrightness);
@@ -953,6 +961,16 @@ void loop() {
 
   screenManager.tick(millis());
   const ScreenModule* activeModule = screenManager.active();
+  const char* activeId = activeModule != nullptr ? activeModule->id() : nullptr;
+  const bool meteoCanvasActive =
+      activeId != nullptr &&
+      (std::strcmp(activeId, kRadarScreenId) == 0 ||
+       std::strcmp(activeId, kForecastScreenId) == 0 ||
+       std::strcmp(activeId, kPlanesScreenId) == 0);
+  navigation_indicator::update(appConfig, kRegisteredScreenIds,
+                               sizeof(kRegisteredScreenIds) /
+                                   sizeof(kRegisteredScreenIds[0]),
+                               activeId, meteoCanvasActive);
   if (activeModule != nullptr &&
       (std::strcmp(activeModule->id(), kRadarScreenId) == 0 ||
        std::strcmp(activeModule->id(), kPlanesScreenId) == 0)) {
