@@ -73,11 +73,13 @@ void testBuildProvenance() {
       app_core::kComponentProvenance[0];
   CHECK_STREQ(meteo.id, "meteo-plane-radar");
   CHECK_STREQ(meteo.upstreamRef, "main");
-  CHECK_STREQ(meteo.upstreamTag, "v0.6.3");
+  CHECK_STREQ(meteo.upstreamTag, "v0.6.4");
   CHECK(std::strlen(meteo.upstreamUrl) > 0);
-  CHECK(std::strlen(meteo.upstreamBase) == 40);
+  CHECK_STREQ(meteo.upstreamBase,
+              "deb3fb452a22cb90ad61728bb395e9ea6560ee04");
   CHECK(std::strlen(meteo.forkUrl) > 0);
-  CHECK(std::strlen(meteo.forkPin) == 40);
+  CHECK_STREQ(meteo.forkPin,
+              "451aec4881444c38fe0b4465536a0f83ad9eb3d8");
 
   const app_core::ComponentProvenance& clock =
       app_core::kComponentProvenance[1];

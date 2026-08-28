@@ -15,7 +15,7 @@ IDs and a central gesture recognizer.
 `UPSTREAMS.json` in the repository root is the source of truth for each
 submodule's exact fork pin, incorporated upstream base, optional exact release
 tag and repository URLs. The present bases are exactly tagged upstream as
-`waveshare-hodiny` `v1.5.5` and MeteoPlaneRadar `v0.6.3`. The generated
+`waveshare-hodiny` `v1.5.5` and MeteoPlaneRadar `v0.6.4`. The generated
 `BuildProvenance.h` exposes the same build-time provenance through the host
 diagnostics endpoint and landing page; the commit remains the immutable
 identity.

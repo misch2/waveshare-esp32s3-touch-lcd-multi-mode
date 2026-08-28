@@ -22,7 +22,7 @@ from upstream_update_common import UpstreamUpdateError
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_TAGS = {
-    "meteo-plane-radar": "v0.6.3",
+    "meteo-plane-radar": "v0.6.4",
     "waveshare-hodiny": "v1.5.5",
 }
 

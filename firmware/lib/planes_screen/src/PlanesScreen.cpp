@@ -94,6 +94,7 @@ bool PlanesScreen::begin() {
   lv_obj_add_flag(rangeFeedback_, LV_OBJ_FLAG_HIDDEN);
 
   ADSB_SetPollFn(pollDuringAircraftTransfer);
+  Route_SetPollFn(pollDuringAircraftTransfer);
   initialized_ = true;
   Serial.printf(
       "Aircraft radar: upstream renderer ready, canvas=%u B, PSRAM free=%u\n",

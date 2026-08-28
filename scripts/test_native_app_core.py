@@ -125,9 +125,103 @@ def test_geoip_integration_contract() -> None:
     assert "if (Settings_HasLocation()) return false;" in upstream_geoip_text
 
 
+def test_forecast_air_quality_api_contract() -> None:
+    """Keep forecast invalidation aligned with the pinned AQ API surface."""
+    forecast_adapter = (
+        REPOSITORY_ROOT
+        / "firmware"
+        / "lib"
+        / "forecast_screen"
+        / "src"
+        / "ForecastScreen.cpp"
+    )
+    forecast_header = (
+        REPOSITORY_ROOT
+        / "MeteoPlaneRadar"
+        / "MeteoPlaneRadar"
+        / "Forecast.h"
+    )
+    assert forecast_adapter.is_file(), "forecast adapter source is missing"
+    assert forecast_header.is_file(), "pinned upstream Forecast.h is missing"
+
+    adapter_text = _read_text(forecast_adapter)
+    header_text = _read_text(forecast_header)
+    adapter_calls = set(
+        re.findall(r"\b(AirQuality_[A-Za-z0-9_]+)\s*\(", adapter_text)
+    )
+    declared_api = set(
+        re.findall(r"\b(AirQuality_[A-Za-z0-9_]+)\s*\(", header_text)
+    )
+    required_api = {
+        "AirQuality_Valid",
+        "AirQuality_Aqi",
+        "AirQuality_Pm25",
+        "AirQuality_PollenMax",
+        "AirQuality_PollenWorst",
+    }
+
+    assert required_api <= adapter_calls, (
+        "forecast dataSignature no longer hashes all remaining public AQ values"
+    )
+    assert adapter_calls <= declared_api, (
+        "forecast adapter calls an AirQuality API absent from pinned Forecast.h: "
+        + ", ".join(sorted(adapter_calls - declared_api))
+    )
+
+
+def test_meteo_network_adapter_contract() -> None:
+    """Keep the new upstream NetSink and route poll hook single-owned."""
+    source_text = {
+        path: _read_text(path) for path in _firmware_sources()
+    }
+    net_sink_include = re.compile(
+        r"^\s*#include\s+[\"<][^\"<>\r\n]*NetSink\.cpp[\">]",
+        re.MULTILINE,
+    )
+    net_sink_units = [
+        path
+        for path, text in source_text.items()
+        if path.suffix in {".c", ".cc", ".cpp"} and net_sink_include.search(text)
+    ]
+    assert len(net_sink_units) == 1, (
+        "expected exactly one integration-owned NetSink.cpp translation unit, "
+        f"found {len(net_sink_units)}"
+    )
+    net_sink_text = source_text[net_sink_units[0]]
+    assert re.search(
+        r"#include\s+[\"<][^\"<>\r\n]*MeteoPlaneRadar"
+        r"/MeteoPlaneRadar/NetSink\.cpp[\">]",
+        net_sink_text,
+    ), "NetSink adapter does not include the pinned upstream implementation"
+
+    planes_adapter = (
+        REPOSITORY_ROOT
+        / "firmware"
+        / "lib"
+        / "planes_screen"
+        / "src"
+        / "PlanesScreen.cpp"
+    )
+    assert planes_adapter.is_file(), "planes adapter source is missing"
+    planes_text = _read_text(planes_adapter)
+    assert re.search(
+        r"\bvoid\s+pollDuringAircraftTransfer\s*\(\s*\)", planes_text
+    ), "planes adapter poll callback is missing"
+    assert len(
+        re.findall(
+            r"\bRoute_SetPollFn\s*\(\s*pollDuringAircraftTransfer\s*\)",
+            planes_text,
+        )
+    ) == 1, "planes adapter must register its route poll callback exactly once"
+
+
 def main() -> None:
     print("Checking GeoIP integration contract...", flush=True)
     test_geoip_integration_contract()
+    print("Checking forecast AirQuality API contract...", flush=True)
+    test_forecast_air_quality_api_contract()
+    print("Checking Meteo network adapter contract...", flush=True)
+    test_meteo_network_adapter_contract()
     BUILD_DIRECTORY.mkdir(parents=True, exist_ok=True)
     compiler = os.environ.get("CXX", "g++")
     compile_command = [

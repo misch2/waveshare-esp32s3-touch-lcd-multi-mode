@@ -198,7 +198,6 @@ uint32_t ForecastScreen::dataSignature() const {
   hashValue(hash, airQualityValid);
   hashValue(hash, AirQuality_Aqi());
   hashValue(hash, AirQuality_Pm25());
-  hashValue(hash, AirQuality_Pm10());
   hashValue(hash, AirQuality_PollenMax());
   hashText(hash, AirQuality_PollenWorst());
   return hash;

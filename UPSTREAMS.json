@@ -7,10 +7,10 @@
       "displayName": "MeteoPlaneRadar",
       "upstreamUrl": "https://github.com/petus/MeteoPlaneRadar",
       "upstreamRef": "main",
-      "upstreamBase": "b074d120dbdd85e0653326c67384aa57926894bf",
-      "upstreamTag": "v0.6.3",
+      "upstreamBase": "deb3fb452a22cb90ad61728bb395e9ea6560ee04",
+      "upstreamTag": "v0.6.4",
       "forkUrl": "https://github.com/misch2/MeteoPlaneRadar",
-      "forkPin": "b9c87dba4cc477ba4ebf6a8806756a837feba5c2"
+      "forkPin": "451aec4881444c38fe0b4465536a0f83ad9eb3d8"
     },
     {
       "id": "waveshare-hodiny",
