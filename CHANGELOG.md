@@ -4,7 +4,11 @@ All notable changes to this firmware are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.2] - 2026-08-28
+
+### Changed
+
+- Updated MeteoPlaneRadar to v0.6.4
 
 ## [1.1.1] - 2026-08-26
 
