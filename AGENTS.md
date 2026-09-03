@@ -26,13 +26,14 @@ UI wherever practical.
 The integration firmware lives in `firmware/`. The two submodules are upstream
 source dependencies, not the application entry points.
 
-Pinned revisions used by the current release:
+Current source pins (authoritative values are in `UPSTREAMS.json`):
 
-- `MeteoPlaneRadar`: `dd77fefd33d6adfa9498a745299e54004cea5694`
-- `waveshare-hodiny`: `e1a66810aba21504cf14c239022620e595430f83`
+- `MeteoPlaneRadar`: `451aec4881444c38fe0b4465536a0f83ad9eb3d8`
+- `waveshare-hodiny`: `b99f3752ccfd9717a12da93964f905b89fe6bdbe` (upstream v1.7.2)
 
-The release firmware has been compiled, uploaded and smoke-tested on the
-physical display. The following are verified:
+The earlier release firmware was compiled, uploaded and smoke-tested on the
+physical display. The v1.7.2 upgrade still requires a new hardware smoke test;
+the following verification records describe the earlier baseline:
 
 - ESP32-S3 boots normally;
 - the ST7701 panel and LVGL framebuffer work;
@@ -516,6 +517,26 @@ OPI PSRAM. Do not infer the physical board capacity solely from the generic
 when memory-heavy production renderers are connected.
 
 ## Updating a submodule
+
+### Clock v1.7.2 adapter constraints
+
+- Analog is an appearance of `clock.dashboard`; do not register another screen
+  or enable upstream CHMI radar/timed rotation. Keep automatic OTA disabled.
+- Keep appearance preview separate from persisted `ClockAppearanceConfig`.
+  Persist `clock-look` under the same display-storage guard as `clock-config`.
+- The shared server uses the upstream bounded-body parser through the reusable
+  `BoundedWebServer` seam. Do not lose request-size limits when sharing routes.
+- Bridge upstream `NetworkCoordinator` to the existing host fetch gate; upstream
+  TMEP and weather animation already acquire it. Never nest another lease.
+- The host directly submits the full RGB framebuffer and waits for its own
+  VSYNC callback. Do not call the new upstream `LCD_addWindow` semaphore path
+  after replacing its panel callbacks. Analog direct mode needs two full warm-up
+  frames and buffer synchronization, including after NVS driver recreation.
+- Combined backup v2 includes schema-28 safe settings and appearance; keep v1 /
+  schema-20 import working. Exclude TMEP credentials and standalone radar/update
+  fields. Existing TMEP credentials must survive import unchanged.
+- The v1.7.2 upgrade has not yet been verified on hardware; repeat analog/digital
+  redraw, swipe/tap/long-press, web preview/save, backup restore and network tests.
 
 Use the guarded helpers from the repository root and update one submodule at a
 time:

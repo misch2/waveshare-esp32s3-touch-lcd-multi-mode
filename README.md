@@ -4,7 +4,7 @@ Firmware pro displej [Waveshare ESP32-S3-Touch-LCD-2.1](https://www.waveshare.co
 
 | Komponenta | Verze | Obsah |
 | --- | --- | --- |
-| [waveshare-hodiny](https://github.com/CooLajz/waveshare-hodiny) | `v1.5.5` | hodiny, počasí, Home Assistant a konfigurace |
+| [waveshare-hodiny](https://github.com/CooLajz/waveshare-hodiny) | `v1.7.2` | digitální a analogové hodiny, počasí, Home Assistant, TMEP a konfigurace |
 | [MeteoPlaneRadar](https://github.com/petus/MeteoPlaneRadar) | `v0.6.4` | meteoradar, předpověď počasí a radar letadel |
 
 Mezi obrazovkami se přepíná vodorovným swipem. Svislý swipe mění rozsah radaru nebo radaru letadel. Nastavení je dostupné přes společné webové rozhraní na http://waveshare-hodiny.local/.

@@ -7,6 +7,7 @@
 #include <esp_timer.h>
 #include <freertos/semphr.h>
 #include <lvgl.h>
+#include <cstring>
 
 #include "Display_ST7701.h"
 #include "Touch_CST820.h"
@@ -28,6 +29,10 @@ volatile uint32_t vsyncGeneration = 0;
 uint32_t flushVsyncTimeoutCount = 0;
 uint32_t lastVsyncTimeoutLogMs = 0;
 bool storageWriteSuspended = false;
+bool partialRefreshRequested = false;
+uint8_t partialRefreshWarmupFrames = 0;
+bool partialRefreshWarmupRequested = false;
+bool partialRefreshEnableRequested = false;
 
 bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t,
                        const esp_lcd_rgb_panel_event_data_t*, void*) {
@@ -176,16 +181,44 @@ bool createFreshPanel() {
 
 void flushDisplay(lv_disp_drv_t* driver, const lv_area_t* area,
                   lv_color_t* pixels) {
-  LCD_addWindow(area->x1, area->y1, area->x2, area->y2,
-                reinterpret_cast<uint8_t*>(&pixels->full));
+  (void)area;
+  if (!lv_disp_flush_is_last(driver)) {
+    lv_disp_flush_ready(driver);
+    return;
+  }
+  // Direct mode passes a complete physical framebuffer even when only a few
+  // LVGL areas changed. Do not call upstream LCD_addWindow: v1.7.2 gives it a
+  // separate bounce-frame semaphore, whereas this host owns the VSYNC callback.
+  ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, 480, 480, pixels));
 
   // esp_lcd switches a double-buffered RGB framebuffer at a frame boundary.
   // Do not let LVGL reuse the previous scanout buffer before that swap has
   // actually happened, otherwise full-refresh drawing can corrupt rows still
   // being consumed by the panel.
   const uint32_t submittedGeneration = currentVsyncGeneration();
-  waitForVsyncAfter(submittedGeneration, "frame flush",
-                    flushVsyncTimeoutCount);
+  const bool presented = waitForVsyncAfter(submittedGeneration, "frame flush",
+                                           flushVsyncTimeoutCount);
+  if (!presented) {
+    // Continuing would give LVGL a buffer that may still be scanned out.
+    // Never conceal a failed gate or attempt an in-stream panel restart.
+    ESP_ERROR_CHECK(ESP_ERR_TIMEOUT);
+  }
+  // Preserve the upstream analog warm-up: two full frames, then synchronize
+  // the now-inactive buffer before enabling partial rendering. The host keeps
+  // its normal 20-line bounce pipeline and VSYNC gate throughout.
+  if (partialRefreshWarmupFrames > 0 && --partialRefreshWarmupFrames == 0) {
+    void* other = pixels == frameBuffer1 ? frameBuffer2
+                   : pixels == frameBuffer2 ? frameBuffer1 : nullptr;
+    if (other == nullptr) {
+      partialRefreshWarmupFrames = 2;
+      partialRefreshWarmupRequested = true;
+    } else {
+      std::memcpy(other, pixels, 480 * 480 * sizeof(lv_color_t));
+      partialRefreshEnableRequested = true;
+    }
+  } else if (partialRefreshWarmupFrames > 0) {
+    partialRefreshWarmupRequested = true;
+  }
   lv_disp_flush_ready(driver);
 }
 
@@ -217,10 +250,10 @@ bool displayHostBegin(TouchSampleCallback touchCallback) {
   lv_init();
 
   // The combined UI performs frequent full-frame PSRAM redraws. Slow the RGB
-  // scanout from the clock driver's 14 MHz default to the 8 MHz timing used by
+  // scanout from the clock driver's 12 MHz default to the 8 MHz timing used by
   // MeteoPlaneRadar, reducing pressure on the shared PSRAM bus. ESP-IDF applies
   // the requested clock safely at the next VSYNC boundary.
-  if (esp_lcd_rgb_panel_set_pclk(panel_handle, kPanelPixelClockHz) != ESP_OK) {
+  if (!LCD_SetPixelClock(kPanelPixelClockHz)) {
     return false;
   }
 
@@ -260,7 +293,33 @@ bool displayHostBegin(TouchSampleCallback touchCallback) {
   return esp_timer_start_periodic(tickTimer, 2000) == ESP_OK;
 }
 
-void displayHostLoop() { lv_timer_handler(); }
+void displayHostLoop() {
+  if (storageWriteSuspended) return;
+  lv_timer_handler();
+  if (partialRefreshEnableRequested) {
+    partialRefreshEnableRequested = false;
+    displayDriver.full_refresh = 0;
+    displayDriver.direct_mode = 1;
+  }
+  if (partialRefreshWarmupRequested) {
+    partialRefreshWarmupRequested = false;
+    displayHostRequestFullRedraw();
+  }
+}
+
+void displayHostSetPartialRefresh(bool enabled, bool rebuildBuffers) {
+  partialRefreshRequested = enabled;
+  if (!rebuildBuffers && enabled &&
+      (displayDriver.direct_mode || partialRefreshWarmupFrames > 0)) return;
+  if (!rebuildBuffers && !enabled && !displayDriver.direct_mode &&
+      partialRefreshWarmupFrames == 0) return;
+  displayDriver.direct_mode = 0;
+  displayDriver.full_refresh = 1;
+  partialRefreshWarmupFrames = enabled ? 2 : 0;
+  partialRefreshWarmupRequested = false;
+  partialRefreshEnableRequested = false;
+  if (!storageWriteSuspended) displayHostRequestFullRedraw();
+}
 
 void displayHostRequestFullRedraw() {
   // Configuration persistence can temporarily compete for memory bandwidth,
@@ -312,6 +371,7 @@ bool displayHostEndStorageWrite() {
   if (!started) return false;
 
   storageWriteSuspended = false;
+  displayHostSetPartialRefresh(partialRefreshRequested, true);
   if (!forcedOff) Set_Backlight(currentBrightness);
   Serial.println("Display: RGB driver recreated after storage write");
   return true;

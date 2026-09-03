@@ -18,10 +18,10 @@
       "displayName": "waveshare-hodiny",
       "upstreamUrl": "https://github.com/CooLajz/waveshare-hodiny",
       "upstreamRef": "main",
-      "upstreamBase": "9537a76932fc9269b2a22a5fb90a62785897c680",
-      "upstreamTag": "v1.5.5",
+      "upstreamBase": "581087e8129e2d24db55f390c110664f1fc178b0",
+      "upstreamTag": "v1.7.2",
       "forkUrl": "https://github.com/misch2/waveshare-hodiny-fork",
-      "forkPin": "915fb211c3c700e030ca18a9eebed974557caf13"
+      "forkPin": "b99f3752ccfd9717a12da93964f905b89fe6bdbe"
     }
   ]
 }

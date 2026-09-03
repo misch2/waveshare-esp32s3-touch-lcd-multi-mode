@@ -18,7 +18,7 @@ extern bool configurationWebRegisterHostClockPage(WebServer& hostServer);
 
 namespace web_host {
 namespace {
-WebServer server(80);
+BoundedWebServer server(80);
 
 constexpr std::size_t kStatusBufferSize = 4096;
 constexpr std::size_t kDiagnosticsBufferSize = 12288;
@@ -399,7 +399,10 @@ bool begin(ClockConfigLoadCallback loadCallback,
            StorageBeginCallback storageBeginCallback,
            StorageEndCallback storageEndCallback,
            const app_core::MeteoWebRoutes& meteoRoutes,
-           const app_core::CombinedWebRoutes& requestedCombinedRoutes) {
+           const app_core::CombinedWebRoutes& requestedCombinedRoutes,
+           ClockAppearanceStateCallback appearanceStateCallback,
+           ClockAppearanceChangeCallback appearancePreviewCallback,
+           ClockAppearanceChangeCallback appearanceSaveCallback) {
   if (!ensureClockWebNamespaces()) return false;
 
   const bool hasCombinedStorageBegin =
@@ -430,13 +433,17 @@ bool begin(ClockConfigLoadCallback loadCallback,
   routes.registerLegacyAliases = false;
   routes.manageServerLifecycle = false;
   routes.firmwareUpdatesEnabled = false;
+  routes.radarEnabled = false;
+  routes.boundedPostSupport = true;
   routes.storageBegin = storageBeginCallback;
   routes.storageEnd = storageEndCallback;
 
   if (!::configurationWebBeginWithOptions(
           routes, loadCallback, saveCallback, statusCallback,
           sunTimesCallback, refreshCallback, dayNightStatusCallback,
-          displayPowerCallback, displayPowerStatusCallback)) {
+          displayPowerCallback, displayPowerStatusCallback, nullptr, nullptr,
+          appearanceStateCallback, appearancePreviewCallback,
+          appearanceSaveCallback)) {
     return false;
   }
   if (!::configurationWebRegisterHostClockPage(server)) return false;
@@ -476,7 +483,18 @@ bool begin(ClockConfigLoadCallback loadCallback,
     server.on(app_core::COMBINED_WEB_EXPORT_PATH, HTTP_GET, handleHostExport);
   }
   if (combinedRoutes.importConfig != nullptr) {
-    server.on(app_core::COMBINED_WEB_IMPORT_PATH, HTTP_POST, handleHostImport);
+    registerBoundedPost(
+        server, &server, app_core::COMBINED_WEB_IMPORT_PATH, handleHostImport,
+        []() {
+          if (server.postBodyTooLarge()) {
+            sendImportResult(413, false, "Konfigurace je příliš velká.");
+          } else if (server.postBodyMalformed()) {
+            sendImportResult(400, false, "Tělo požadavku není platné.");
+          } else {
+            sendImportResult(503, false,
+                             "Pro zpracování požadavku není dost paměti.");
+          }
+        });
   }
   if (combinedRoutes.hasFirmwareUploadCallbacks()) {
     server.on(app_core::COMBINED_WEB_FIRMWARE_UPLOAD_PATH, HTTP_POST,

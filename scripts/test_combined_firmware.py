@@ -75,6 +75,7 @@ def main() -> None:
             ]
         )
 
+    run([sys.executable, str(SCRIPTS_DIRECTORY / "test_clock_update.py")])
     run([sys.executable, str(SCRIPTS_DIRECTORY / "verify_firmware_images.py")])
     run(["git", "diff", "--check"])
     verify_clean_submodules()

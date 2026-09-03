@@ -15,7 +15,7 @@ IDs and a central gesture recognizer.
 `UPSTREAMS.json` in the repository root is the source of truth for each
 submodule's exact fork pin, incorporated upstream base, optional exact release
 tag and repository URLs. The present bases are exactly tagged upstream as
-`waveshare-hodiny` `v1.5.5` and MeteoPlaneRadar `v0.6.4`. The generated
+`waveshare-hodiny` `v1.7.2` and MeteoPlaneRadar `v0.6.4`. The generated
 `BuildProvenance.h` exposes the same build-time provenance through the host
 diagnostics endpoint and landing page; the commit remains the immutable
 identity.
@@ -86,10 +86,9 @@ LVGL overlay containing the direction and newly selected range. It is flushed
 before the upstream renderer starts its potentially slow data work, so a
 registered gesture does not look ignored.
 
-The clock dashboard additionally filters its manual day/night short-click
-handler through the central recognizer's tap tolerance. This is necessary
-because LVGL reports pointer release before the host dispatches the completed
-swipe; a horizontal screen swipe must not also toggle the clock's night mode.
+The clock dashboard receives manual day/night taps only after classification by
+the central recognizer. LVGL retains the settings controls and long press;
+horizontal screen swipes must not also toggle the clock's night mode.
 
 Implemented screens:
 
@@ -143,6 +142,26 @@ migrations and dedicated `clockcfg` partition. The combined partition table
 retains two application slots for safe manual firmware deployment, but the
 running firmware does not contact a release server or expose an automatic
 update action.
+
+The v1.7.2 adapter adds analog appearance within `clock.dashboard`, not another
+scheduler entry. Appearance has upstream `clock-look` persistence, with separate
+saved and preview state. The combined backup format is now version 2 and retains
+version 1 import; it includes appearance, generic side values and TMEP assignments
+but never TMEP export credentials. Restore keeps the device's existing TMEP
+credentials and the existing Home Assistant token/URL reuse rule.
+
+The upstream TMEP service and animated-weather downloads use the same host fetch
+gate through `NetworkCoordinator`; do not wrap those requests in another lease.
+TMEP refreshes every minute while selected, independently of the ten-minute
+Open-Meteo interval. The clock's standalone CHMI radar and timed rotation remain
+disabled; the host's existing Meteo radar is unchanged.
+
+Analog partial rendering keeps the host's 8 MHz, 20-line bounce-buffer and VSYNC
+pipeline. Both buffers are fully redrawn and synchronized before enabling direct
+mode; storage recreation repeats this warm-up. The host bypasses upstream
+`LCD_addWindow` because its new private semaphore does not own the host's panel
+callbacks. These upgrade paths require a fresh physical smoke test; the earlier
+hardware results below describe the previous release, not v1.7.2 validation.
 
 Build from this directory with `pio run`. `platformio.ini` pins PIOArduino
 55.03.311 (Arduino-ESP32 3.3.11 / ESP-IDF 5.5.5), so a clean CI runner uses the

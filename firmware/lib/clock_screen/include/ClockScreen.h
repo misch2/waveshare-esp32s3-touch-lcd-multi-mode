@@ -5,9 +5,9 @@
 
 #include <lvgl.h>
 
+#include "ClockConfig.h"
 #include "ScreenModule.h"
 
-struct ClockConfig;
 struct ClockValues;
 using ClockBrightnessPreviewCallback = void (*)(uint8_t brightness);
 using ClockSettingsOpenCallback = void (*)();
@@ -26,7 +26,8 @@ class ClockScreen final : public ScreenModule {
                        ClockBrightnessPreviewCallback brightnessPreview,
                        ClockSettingsOpenCallback settingsOpen,
                        ClockShortClickAllowedCallback shortClickAllowed,
-                       const char* firmwareVersion);
+                       const char* firmwareVersion,
+                       ClockAppearanceConfig* appearance = nullptr);
 
   const char* id() const override { return "clock.dashboard"; }
   const char* label() const override { return "Clock"; }
@@ -41,12 +42,20 @@ class ClockScreen final : public ScreenModule {
   void updateLocalTime(const std::tm& localTime);
   void updateValues(const ClockValues& values);
   void applyConfiguration();
+  void applyAppearance(const ClockAppearanceConfig& appearance);
+  ClockAppearanceConfig& activeAppearance() { return *appearance_; }
+  const ClockAppearanceConfig& activeAppearance() const { return *appearance_; }
   void updateWebStatus(bool active, uint8_t mode);
   bool nightModeEnabled() const;
   bool takeConfigSaveRequest(uint8_t& webMode);
+  bool takeAppearanceSaveRequest();
+
+  friend void displayDriverSetPartialRefresh(bool enabled,
+                                             bool rebuildBuffers);
 
  private:
-  void saveSettings(uint8_t dayBrightness, uint8_t nightBrightness,
+  void saveSettings(uint8_t clockStyle, uint8_t dayBrightness,
+                    uint8_t nightBrightness,
                     bool automaticDayNight, bool secondRingEnabled,
                     uint8_t secondEffect, bool animatedWeatherIcons,
                     uint8_t weatherIconStyle, bool automaticFirmwareUpdate,
@@ -55,7 +64,8 @@ class ClockScreen final : public ScreenModule {
 
   static void onBrightnessPreview(uint8_t brightness);
   static void onSettingsOpen();
-  static void onSettingsSave(uint8_t dayBrightness, uint8_t nightBrightness,
+  static void onSettingsSave(uint8_t clockStyle, uint8_t dayBrightness,
+                             uint8_t nightBrightness,
                              bool automaticDayNight, bool secondRingEnabled,
                              uint8_t secondEffect,
                              bool animatedWeatherIcons,
@@ -63,6 +73,8 @@ class ClockScreen final : public ScreenModule {
                              bool automaticFirmwareUpdate, uint8_t webMode);
 
   ClockConfig& config_;
+  ClockAppearanceConfig defaultAppearance_;
+  ClockAppearanceConfig* appearance_ = nullptr;
   ClockBrightnessPreviewCallback brightnessPreview_ = nullptr;
   ClockSettingsOpenCallback settingsOpen_ = nullptr;
   ClockShortClickAllowedCallback shortClickAllowed_ = nullptr;
@@ -77,5 +89,6 @@ class ClockScreen final : public ScreenModule {
   bool latestWeatherIsDay_ = true;
   int64_t lastPresentedSecond_ = -1;
   bool configSavePending_ = false;
+  bool appearanceSavePending_ = false;
   uint8_t pendingWebMode_ = 0;
 };

@@ -2,7 +2,7 @@
 // serialization, validation and authentication remain upstream. The
 // integration host injects its caller-owned WebServer through the upstream
 // route-registration seam.
-// Source revision: 9537a76932fc9269b2a22a5fb90a62785897c680.
+// Source revision: 581087e8129e2d24db55f390c110664f1fc178b0.
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <WebServer.h>
@@ -46,14 +46,14 @@ constexpr char kClockPageLink[] =
     "</p>";
 constexpr size_t kClockPageChunkSize = 512;
 
-bool clockPageSourceMatches(size_t offset, const char* marker) {
+bool clockPageSourceMatches(const char* source, size_t sourceLength,
+                            size_t offset, const char* marker) {
   const size_t markerLength = std::strlen(marker);
-  if (offset + markerLength > sizeof(CONFIGURATION_PAGE) - 1) {
+  if (offset + markerLength > sourceLength) {
     return false;
   }
   for (size_t index = 0; index < markerLength; ++index) {
-    if (static_cast<char>(pgm_read_byte(CONFIGURATION_PAGE + offset + index)) !=
-        marker[index]) {
+    if (static_cast<char>(pgm_read_byte(source + offset + index)) != marker[index]) {
       return false;
     }
   }
@@ -63,7 +63,9 @@ bool clockPageSourceMatches(size_t offset, const char* marker) {
 bool clockPageTemplateCompatible() {
   const size_t sourceLength = sizeof(CONFIGURATION_PAGE) - 1;
   for (size_t offset = 0; offset < sourceLength; ++offset) {
-    if (clockPageSourceMatches(offset, kClockPageBodyMarker)) return true;
+    if (clockPageSourceMatches(CONFIGURATION_PAGE, sourceLength, offset,
+                               kClockPageBodyMarker))
+      return true;
   }
   return false;
 }
@@ -94,16 +96,18 @@ class ClockPageWriter {
   size_t length_ = 0;
 };
 
-void handleCombinedClockRoot() {
-  // Keep the upstream login and locked/diagnostic pages byte-for-byte intact.
-  // Only the authenticated configuration page is adapted for the combined
-  // host, so all existing auth and timed-mode behavior remains upstream-owned.
-  if (!webActive || (webPasswordEnabled && !webSessionAuthenticated())) {
-    handleRoot();
-    return;
-  }
-
-  if (!clockPageTemplateCompatible()) {
+void serveCombinedClockPage(bool diagnosticsOnly) {
+  persistBrowserLanguageIfUnset();
+  const char* source = diagnosticsOnly || !webActive
+                           ? DIAGNOSTIC_PAGE
+                           : (webPasswordEnabled && !webSessionAuthenticated()
+                                  ? LOGIN_PAGE
+                                  : CONFIGURATION_PAGE);
+  const size_t sourceLength = source == DIAGNOSTIC_PAGE
+                                  ? sizeof(DIAGNOSTIC_PAGE) - 1
+                                  : source == LOGIN_PAGE ? sizeof(LOGIN_PAGE) - 1
+                                                          : sizeof(CONFIGURATION_PAGE) - 1;
+  if (source == CONFIGURATION_PAGE && !clockPageTemplateCompatible()) {
     // A future upstream page must never be served as a partially transformed
     // response. Falling back keeps the configuration usable and makes the
     // missing adapter marker visible in source review.
@@ -118,18 +122,44 @@ void handleCombinedClockRoot() {
   sharedServer.send(200, F("text/html; charset=utf-8"), F(""));
 
   ClockPageWriter output(sharedServer);
-  const size_t sourceLength = sizeof(CONFIGURATION_PAGE) - 1;
   for (size_t offset = 0; offset < sourceLength;) {
-    if (clockPageSourceMatches(offset, kClockPageBodyMarker)) {
+    if (source == CONFIGURATION_PAGE &&
+        clockPageSourceMatches(source, sourceLength, offset,
+                               kClockPageBodyMarker)) {
       output.append(kClockPageLink);
       offset += std::strlen(kClockPageBodyMarker);
       continue;
     }
-    output.append(static_cast<char>(pgm_read_byte(CONFIGURATION_PAGE + offset)));
+    if (clockPageSourceMatches(source, sourceLength, offset, "/api/")) {
+      output.append(configurationApiPrefix.c_str());
+      output.append('/');
+      offset += std::strlen("/api/");
+      continue;
+    }
+    if (clockPageSourceMatches(source, sourceLength, offset,
+                               "href=\"/diagnostics\"")) {
+      output.append("href=\"");
+      output.append(configurationPagePath.c_str());
+      output.append("diagnostics\"");
+      offset += std::strlen("href=\"/diagnostics\"");
+      continue;
+    }
+    if (clockPageSourceMatches(source, sourceLength, offset,
+                               "location.replace(\"/\")")) {
+      output.append("location.replace(\"");
+      output.append(configurationPagePath.c_str());
+      output.append("\")");
+      offset += std::strlen("location.replace(\"/\")");
+      continue;
+    }
+    output.append(static_cast<char>(pgm_read_byte(source + offset)));
     ++offset;
   }
   output.flush();
 }
+
+void handleCombinedClockRoot() { serveCombinedClockPage(false); }
+void handleCombinedClockDiagnostics() { serveCombinedClockPage(true); }
 
 }  // namespace
 
@@ -142,5 +172,8 @@ bool configurationWebRegisterHostClockPage(WebServer& hostServer) {
   }
   hostServer.on(CONFIGURATION_WEB_DEFAULT_PAGE_PATH, HTTP_GET,
                 handleCombinedClockRoot);
+  const String diagnosticsPath = configurationPagePath + F("diagnostics");
+  if (!hostServer.removeRoute(diagnosticsPath, HTTP_GET)) return false;
+  hostServer.on(diagnosticsPath, HTTP_GET, handleCombinedClockDiagnostics);
   return true;
 }

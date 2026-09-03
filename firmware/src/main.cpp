@@ -50,6 +50,10 @@
 namespace {
 app_core::AppConfig appConfig = app_core::AppConfig::defaults();
 ClockConfig clockConfig;
+ClockAppearanceConfig clockAppearance;
+ClockAppearanceConfig activeClockAppearance;
+ClockAppearanceConfig pendingClockAppearance;
+bool clockAppearanceApplyPending = false;
 ClockDataService clockDataService;
 ClockValues latestClockValues;
 GestureRecognizer gestureRecognizer;
@@ -73,7 +77,7 @@ bool allowClockDashboardShortClick();
 
 ClockScreen clockScreen(clockConfig, previewClockBrightness, openClockSettings,
                         allowClockDashboardShortClick,
-                        kCombinedFirmwareVersion);
+                        kCombinedFirmwareVersion, &activeClockAppearance);
 RadarScreen radarScreen;
 ForecastScreen forecastScreen;
 PlanesScreen planesScreen;
@@ -161,7 +165,10 @@ void loadClockConfigForWeb(ClockConfig& config) { config = clockConfig; }
 
 bool saveClockConfigFromWeb(const ClockConfig& config,
                             bool tokenWasSubmitted) {
-  ClockConfig candidate = config;
+  static ClockConfig candidate;
+  candidate = config;
+  candidate.automaticFirmwareUpdate = false;
+  candidate.automaticRadarRotation = false;
   if (!tokenWasSubmitted) {
     if (homeAssistantMayReuseStoredToken(candidate.homeAssistantUrl,
                                          clockConfig.homeAssistantUrl)) {
@@ -178,6 +185,25 @@ bool saveClockConfigFromWeb(const ClockConfig& config,
   webConfigApplyPending = true;
   webConfigApplyAt = millis() + 250;
   return true;
+}
+
+void loadClockAppearanceForWeb(ClockAppearanceConfig& saved,
+                               ClockAppearanceConfig& active) {
+  saved = clockAppearance;
+  active = clockAppearanceApplyPending ? pendingClockAppearance
+                                       : activeClockAppearance;
+}
+
+bool previewClockAppearanceFromWeb(const ClockAppearanceConfig& appearance) {
+  pendingClockAppearance = appearance;
+  clockAppearanceApplyPending = true;
+  return true;
+}
+
+bool saveClockAppearanceFromWeb(const ClockAppearanceConfig& appearance) {
+  if (!clockAppearanceSave(appearance)) return false;
+  clockAppearance = appearance;
+  return previewClockAppearanceFromWeb(appearance);
 }
 
 void updateClockWebStatus(bool active) {
@@ -311,6 +337,7 @@ void addNetworkDiagnostic(JsonObject out, NetworkDiagnosticKind kind) {
   out["lastResult"] = snapshot.lastResult;
   out["lastStartedAt"] = snapshot.lastStartedAt;
   out["lastFinishedAt"] = snapshot.lastFinishedAt;
+  out["lastSuccess"] = snapshot.lastSuccess;
   addMemorySnapshot(out["before"].to<JsonObject>(), snapshot.before);
   addMemorySnapshot(out["after"].to<JsonObject>(), snapshot.after);
   out["detail"] = snapshot.detail;
@@ -391,6 +418,10 @@ size_t loadCombinedDiagnosticsForWeb(char* out, size_t capacity) {
                        NetworkDiagnosticKind::OpenMeteoRuntime);
   addNetworkDiagnostic(network["openMeteoTest"].to<JsonObject>(),
                        NetworkDiagnosticKind::OpenMeteoTest);
+  addNetworkDiagnostic(network["tmepRuntime"].to<JsonObject>(),
+                       NetworkDiagnosticKind::TmepRuntime);
+  addNetworkDiagnostic(network["tmepTest"].to<JsonObject>(),
+                       NetworkDiagnosticKind::TmepTest);
 
   char status[64];
   JsonObject meteo = document["meteo"].to<JsonObject>();
@@ -430,7 +461,7 @@ size_t loadCombinedExportForWeb(char* out, size_t capacity) {
   const size_t meteoLength =
       writeMeteoBackupJson(meteoJson, 2048);
   if (meteoLength == 0) return 0;
-  return combined_config::writeExport(appConfig, clockConfig, meteoJson,
+  return combined_config::writeExport(appConfig, clockConfig, clockAppearance, meteoJson,
                                       meteoLength, out, capacity);
 }
 
@@ -473,6 +504,7 @@ bool importCombinedConfigFromWeb(const char*, size_t, char* message,
   }
   previous->appConfig = appConfig;
   previous->clockConfig = clockConfig;
+  previous->clockAppearance = clockAppearance;
   previous->meteoHasLocation = Settings_HasLocation();
   previous->meteoJsonLength = writeMeteoBackupJson(
       previous->meteoJson, sizeof(previous->meteoJson));
@@ -488,6 +520,7 @@ bool importCombinedConfigFromWeb(const char*, size_t, char* message,
     appConfig = previous->appConfig;
     if (!clockConfigSave(previous->clockConfig)) restored = false;
     clockConfig = previous->clockConfig;
+    if (!saveClockAppearanceFromWeb(previous->clockAppearance)) restored = false;
     webConfigApplyPending = true;
     webConfigApplyAt = millis() + 250;
     if (!saveMeteoConfigFromWeb(previous->meteoJson,
@@ -508,7 +541,8 @@ bool importCombinedConfigFromWeb(const char*, size_t, char* message,
   }
   appConfig = bundle->appConfig;
 
-  if (!saveClockConfigFromWeb(bundle->clockConfig, false)) {
+  if (!saveClockConfigFromWeb(bundle->clockConfig, false) ||
+      !saveClockAppearanceFromWeb(bundle->clockAppearance)) {
     const bool restored = rollback();
     snprintf(message, messageCapacity,
              restored ? "Nastavení hodin se nepodařilo uložit; původní stav byl obnoven."
@@ -813,6 +847,10 @@ bool allowClockDashboardShortClick() {
 }
 
 void applyPendingWebConfiguration(uint32_t nowMs) {
+  if (clockAppearanceApplyPending) {
+    clockAppearanceApplyPending = false;
+    clockScreen.applyAppearance(pendingClockAppearance);
+  }
   if (!webConfigApplyPending ||
       static_cast<int32_t>(nowMs - webConfigApplyAt) < 0) {
     return;
@@ -868,8 +906,19 @@ void setup() {
       Serial.println("Warning: clock configuration invalid; using defaults");
     }
   }
-  if (clockConfig.automaticFirmwareUpdate) {
+  uint32_t legacyWeatherIconColor = clockConfig.leftWeatherIconColor;
+  if (clockConfig.dataSource == CLOCK_DATA_SOURCE_OPEN_METEO) {
+    legacyWeatherIconColor = clockConfig.openMeteoSlots[0].color;
+  } else if (std::strcmp(clockConfig.leftSide.icon, "weather") != 0 &&
+             std::strcmp(clockConfig.rightSide.icon, "weather") == 0) {
+    legacyWeatherIconColor = clockConfig.rightWeatherIconColor;
+  }
+  clockAppearanceLoad(clockAppearance, legacyWeatherIconColor,
+                      clockConfig.dateFormat, clockConfig.dateColor);
+  activeClockAppearance = clockAppearance;
+  if (clockConfig.automaticFirmwareUpdate || clockConfig.automaticRadarRotation) {
     clockConfig.automaticFirmwareUpdate = false;
+    clockConfig.automaticRadarRotation = false;
     if (clockStorageReady && !clockConfigSave(clockConfig)) {
       Serial.println("Warning: automatic firmware updates could not be disabled in storage");
     }
@@ -900,7 +949,9 @@ void setup() {
           loadSunTransitionTimes, requestDayNightRefresh, loadDayNightStatus,
           setDisplayForcedOff, displayIsForcedOff,
           beginConfigurationStorageWrite, endConfigurationStorageWrite,
-          makeMeteoWebRoutes(), makeCombinedWebRoutes())) {
+          makeMeteoWebRoutes(), makeCombinedWebRoutes(),
+          loadClockAppearanceForWeb, previewClockAppearanceFromWeb,
+          saveClockAppearanceFromWeb)) {
     Serial.println("Warning: web host initialization failed");
   }
 
@@ -956,11 +1007,14 @@ void loop() {
   }
 
   uint8_t requestedWebMode = 0;
-  if (clockScreen.takeConfigSaveRequest(requestedWebMode)) {
+  const bool saveClockSettings = clockScreen.takeConfigSaveRequest(requestedWebMode);
+  const bool saveClockAppearance = clockScreen.takeAppearanceSaveRequest();
+  if (saveClockSettings || saveClockAppearance) {
     const bool displaySuspended = beginConfigurationStorageWrite();
-    if (displaySuspended && clockConfigSave(clockConfig)) {
+    if (displaySuspended && (!saveClockSettings || clockConfigSave(clockConfig)) &&
+        (!saveClockAppearance || saveClockAppearanceFromWeb(activeClockAppearance))) {
       clockDataService.applyConfig(clockConfig);
-      if (!web_host::setMode(
+      if (saveClockSettings && !web_host::setMode(
               static_cast<web_host::Mode>(requestedWebMode))) {
         Serial.println("Warning: web mode could not be persisted");
       }

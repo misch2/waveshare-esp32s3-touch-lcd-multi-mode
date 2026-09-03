@@ -9,12 +9,14 @@
 namespace combined_config {
 
 inline constexpr char kFormat[] = "waveshare-multi-mode-settings";
-inline constexpr std::uint16_t kSchemaVersion = 1;
+inline constexpr std::uint16_t kSchemaVersion = 2;
+inline constexpr std::uint16_t kLegacySchemaVersion = 1;
 inline constexpr std::size_t kMeteoJsonCapacity = 3072;
 
 struct ImportBundle {
   app_core::AppConfig appConfig = app_core::AppConfig::defaults();
   ClockConfig clockConfig{};
+  ClockAppearanceConfig clockAppearance{};
   char meteoJson[kMeteoJsonCapacity] = {};
   std::size_t meteoJsonLength = 0;
   bool meteoHasLocation = false;
@@ -26,6 +28,7 @@ struct ImportBundle {
 // too small.
 std::size_t writeExport(const app_core::AppConfig& appConfig,
                         const ClockConfig& clockConfig,
+                        const ClockAppearanceConfig& clockAppearance,
                         const char* meteoJson, std::size_t meteoJsonLength,
                         char* out, std::size_t capacity);
 

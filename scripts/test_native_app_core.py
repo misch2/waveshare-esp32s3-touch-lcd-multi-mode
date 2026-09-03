@@ -215,6 +215,55 @@ def test_meteo_network_adapter_contract() -> None:
     ) == 1, "planes adapter must register its route poll callback exactly once"
 
 
+def test_clock_dashboard_adapter_contract() -> None:
+    """Keep the v1.7.2 dashboard behind the combined-host seams."""
+    dashboard_header = _read_text(
+        REPOSITORY_ROOT
+        / "waveshare-hodiny"
+        / "WaveshareHodiny"
+        / "ClockDashboard.h"
+    )
+    dashboard_source = _read_text(
+        REPOSITORY_ROOT
+        / "waveshare-hodiny"
+        / "WaveshareHodiny"
+        / "ClockDashboard.cpp"
+    )
+    screen_header = _read_text(
+        REPOSITORY_ROOT / "firmware" / "lib" / "clock_screen" / "include" / "ClockScreen.h"
+    )
+    screen_source = _read_text(
+        REPOSITORY_ROOT / "firmware" / "lib" / "clock_screen" / "src" / "ClockScreen.cpp"
+    )
+
+    assert "ClockAppearanceConfig" in dashboard_header
+    assert "clockDashboardHandleShortClick" in dashboard_header
+    assert "clockDashboardWeatherIconStyle" in dashboard_header
+    assert "clockDashboardApplyAppearance" in dashboard_header
+    assert "radarVisibility != nullptr && radarRange != nullptr" in dashboard_source
+    assert "!radarFeatureAvailable" in dashboard_source
+    assert "ClockAppearanceConfig* appearance = nullptr" in screen_header
+    assert "clockDashboardApplyAppearance(*appearance_)" in screen_source
+    assert "clockDashboardHandleShortClick()" in screen_source
+    assert "clockDashboardWeatherIconStyle(config_.weatherIconStyle)" in screen_source
+    assert "displayHostSetPartialRefresh" in screen_source
+
+
+def test_clock_config_legacy_migration_contract() -> None:
+    """Ensure schema-20 side names/colors are copied into schema-28 defaults."""
+    config_source = _read_text(
+        REPOSITORY_ROOT
+        / "waveshare-hodiny"
+        / "WaveshareHodiny"
+        / "ClockConfig.cpp"
+    )
+    assert "PUBLIC_1_5_5_SCHEMA_VERSION = 20" in config_source
+    assert "applyLegacySideValueDefaults(config)" in config_source
+    assert "config.leftValueColorScale.points[0] = {0.0f, config.leftSide.color}" in config_source
+    assert "config.rightValueColorScale.points[0] = {0.0f, config.rightSide.color}" in config_source
+    assert "config.schemaVersion = CLOCK_CONFIG_SCHEMA_VERSION" in config_source
+
+
 def main() -> None:
     print("Checking GeoIP integration contract...", flush=True)
     test_geoip_integration_contract()
@@ -222,6 +271,10 @@ def main() -> None:
     test_forecast_air_quality_api_contract()
     print("Checking Meteo network adapter contract...", flush=True)
     test_meteo_network_adapter_contract()
+    print("Checking clock dashboard adapter contract...", flush=True)
+    test_clock_dashboard_adapter_contract()
+    print("Checking clock configuration migration contract...", flush=True)
+    test_clock_config_legacy_migration_contract()
     BUILD_DIRECTORY.mkdir(parents=True, exist_ok=True)
     compiler = os.environ.get("CXX", "g++")
     compile_command = [
@@ -250,6 +303,7 @@ def main() -> None:
             / "firmware/lib/navigation_indicator/src/NavigationIndicator.cpp"
         ),
         str(REPOSITORY_ROOT / "firmware/lib/app_core/src/ScreenManager.cpp"),
+        str(REPOSITORY_ROOT / "waveshare-hodiny/WaveshareHodiny/ClockConfig.cpp"),
         str(REPOSITORY_ROOT / "waveshare-hodiny/WaveshareHodiny/DayNightLogic.cpp"),
         str(REPOSITORY_ROOT / "firmware/test/native/test_runner.cpp"),
         "-o",

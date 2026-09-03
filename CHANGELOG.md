@@ -4,6 +4,24 @@ All notable changes to this firmware are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Clock v1.7.2 analog appearance, localized settings, configurable side values
+  and TMEP sensor assignments, reusing the upstream dashboard and web page.
+- Combined backup schema 2 includes clock appearance and the new non-secret
+  settings; schema 1 backups remain importable. TMEP credentials are excluded.
+
+### Changed
+
+- Adapted the clock's network coordinator to the shared fetch gate, including
+  TMEP and animated weather downloads. Open-Meteo releases the gate before sleep.
+- Adapted analog partial refresh to the host-owned display pipeline while
+  retaining 8 MHz timing, bounce buffers and display-safe configuration saves.
+- Kept the clock's standalone radar, automatic screen rotation and automatic
+  firmware updater disabled in the combined firmware.
+
 ## [1.1.2] - 2026-08-28
 
 ### Changed

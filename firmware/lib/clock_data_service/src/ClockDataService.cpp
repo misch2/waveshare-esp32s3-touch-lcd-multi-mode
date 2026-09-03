@@ -14,6 +14,7 @@
 #include "HomeAssistantBatchPolicy.h"
 #include "NetworkFetchGate.h"
 #include "NetworkDiagnostics.h"
+#include "TmepService.h"
 
 namespace {
 
@@ -24,6 +25,7 @@ constexpr uint32_t HOME_ASSISTANT_RESPONSE_TIMEOUT_MS = 8000;
 constexpr uint8_t HOME_ASSISTANT_REQUEST_ATTEMPTS = 2;
 constexpr uint32_t HOME_ASSISTANT_REQUEST_RETRY_DELAY_MS = 250;
 constexpr uint32_t OPEN_METEO_REFRESH_MS = 10UL * 60UL * 1000UL;
+constexpr uint32_t TMEP_REFRESH_MS = 60UL * 1000UL;
 constexpr uint32_t NETWORK_FETCH_GATE_TIMEOUT_MS = 15UL * 1000UL;
 constexpr time_t VALID_TIME_THRESHOLD = 1700000000;
 
@@ -139,6 +141,7 @@ bool fetchOpenMeteo(const ClockConfig& config, ClockValues& values) {
   float* destinations[] = {&values.leftTemperatureC, &values.rightTemperatureC,
                            &values.metricAValue, &values.metricBValue};
   for (size_t index = 0; index < 4; ++index) {
+    if (config.tmepSlots[index].enabled) continue;
     if (extractJsonNumberField(payload, config.openMeteoSlots[index].value,
                                number)) {
       *destinations[index] = static_cast<float>(number);
@@ -153,6 +156,50 @@ bool fetchOpenMeteo(const ClockConfig& config, ClockValues& values) {
                                  : F("Odpověď neobsahuje všechny hodnoty"));
   networkDiagnosticsEnd(NetworkDiagnosticKind::OpenMeteoRuntime, ok, status);
   return ok;
+}
+
+// Adapted from WaveshareHodiny.ino v1.7.2 (581087e). The catalog/parser and
+// transport remain upstream; this service only maps its snapshot to slots.
+struct TmepValuesContext {
+  const ClockConfig& config;
+  ClockValues& values;
+  bool complete = true;
+};
+
+void applyTmepValues(const TmepCatalog& catalog, void* rawContext) {
+  auto& context = *static_cast<TmepValuesContext*>(rawContext);
+  float* destinations[] = {&context.values.leftTemperatureC,
+                           &context.values.rightTemperatureC,
+                           &context.values.metricAValue,
+                           &context.values.metricBValue};
+  for (size_t index = 0; index < 4; ++index) {
+    const ClockTmepSlotConfig& slot = context.config.tmepSlots[index];
+    if (!slot.enabled) continue;
+    const TmepSensor* sensor = tmepFindSensor(catalog, slot.sensorId);
+    const TmepValue* value = sensor == nullptr ? nullptr
+                                              : tmepFindValue(*sensor, slot.field);
+    if (value == nullptr || !value->available) {
+      *destinations[index] = NAN;
+      context.complete = false;
+    } else {
+      *destinations[index] = value->value;
+    }
+  }
+}
+
+bool fetchTmepValues(const ClockConfig& config, ClockValues& values) {
+  TmepValuesContext context{config, values};
+  int status = 0;
+  String error;
+  // tmepFetchCatalog owns NetworkOperationGuard, bridged to the host gate.
+  if (!tmepFetchCatalog(config.tmepExportId, config.tmepExportKey,
+                          applyTmepValues, &context,
+                          NetworkDiagnosticKind::TmepRuntime, status, error)) return false;
+  if (!context.complete) {
+    networkDiagnosticsSetDetail(NetworkDiagnosticKind::TmepRuntime,
+                                 F("Export neobsahuje všechny vybrané hodnoty."));
+  }
+  return context.complete;
 }
 
 // Upstream extraction: WaveshareHodiny.ino @
@@ -527,6 +574,7 @@ bool extractJsonStringField(const String& payload, const char* key,
 
 bool ClockDataService::begin(const ClockConfig& config) {
   if (taskHandle_ != nullptr) return false;
+  tmepServiceBegin();
 
   configMutex_ = xSemaphoreCreateMutex();
   valuesQueue_ = xQueueCreate(1, sizeof(ClockValues));
@@ -616,6 +664,9 @@ bool ClockDataService::consumeDayNightLightRefreshRequest() {
 // 9537a76932fc9269b2a22a5fb90a62785897c680, lines 995-1053.
 void ClockDataService::workerLoop() {
   ClockValues lastAvailableValues;
+  uint32_t nextOpenMeteoRefreshAt = 0;
+  uint32_t nextTmepRefreshAt = 0;
+  bool tmepCatalogPrimed = false;
   // Keep repeated allocation failures quiet without delaying a user-fixed
   // configuration for more than one normal refresh interval.
   app_core::HomeAssistantBatchPolicy homeAssistantPolicy(5000, 60000);
@@ -623,6 +674,8 @@ void ClockDataService::workerLoop() {
     const ClockConfig config = configSnapshot();
     ClockValues values = lastAvailableValues;
     if (WiFi.status() != WL_CONNECTED) {
+      nextOpenMeteoRefreshAt = nextTmepRefreshAt = 0;
+      tmepCatalogPrimed = false;
       publishValues(ClockValues{});
       ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HOME_ASSISTANT_RETRY_MS));
       continue;
@@ -630,17 +683,63 @@ void ClockDataService::workerLoop() {
 
     if (config.dataSource == CLOCK_DATA_SOURCE_OPEN_METEO) {
       homeAssistantPolicy.reset();
-      const network_host::FetchLease fetchLease(
-          NETWORK_FETCH_GATE_TIMEOUT_MS);
-      const bool apiResponded =
-          fetchLease && fetchOpenMeteo(config, values);
-      if (apiResponded) lastAvailableValues = values;
-      publishValues(values);
-      ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(
-                                   apiResponded ? OPEN_METEO_REFRESH_MS
-                                                : HOME_ASSISTANT_RETRY_MS));
+      const auto due = [](uint32_t now, uint32_t deadline) {
+        return deadline == 0 || static_cast<int32_t>(now - deadline) >= 0;
+      };
+      bool valuesUpdated = false;
+      if (due(millis(), nextOpenMeteoRefreshAt)) {
+        bool responded = false;
+        {
+          const network_host::FetchLease lease(NETWORK_FETCH_GATE_TIMEOUT_MS);
+          responded = lease && fetchOpenMeteo(config, values);
+        }  // Release before TMEP and, importantly, before sleeping.
+        nextOpenMeteoRefreshAt = millis() +
+            (responded ? OPEN_METEO_REFRESH_MS : TMEP_REFRESH_MS);
+        valuesUpdated = true;
+      }
+      bool tmepEnabled = false;
+      for (const auto& slot : config.tmepSlots) tmepEnabled |= slot.enabled;
+      const bool tmepConfigured = config.tmepExportId[0] != '\0' &&
+                                  config.tmepExportKey[0] != '\0';
+      if (tmepConfigured && (tmepEnabled || !tmepCatalogPrimed) &&
+          due(millis(), nextTmepRefreshAt)) {
+        tmepCatalogPrimed = fetchTmepValues(config, values);
+        nextTmepRefreshAt = millis() + TMEP_REFRESH_MS;
+        valuesUpdated |= tmepEnabled;
+      }
+      if (!tmepConfigured) {
+        nextTmepRefreshAt = 0;
+        tmepCatalogPrimed = false;
+        float* slots[] = {&values.leftTemperatureC, &values.rightTemperatureC,
+                          &values.metricAValue, &values.metricBValue};
+        for (size_t i = 0; i < 4; ++i) {
+          if (config.tmepSlots[i].enabled) *slots[i] = NAN;
+        }
+      }
+      if (valuesUpdated) {
+        lastAvailableValues = values;
+        publishValues(values);
+      }
+      const uint32_t now = millis();
+      uint32_t waitMs = due(now, nextOpenMeteoRefreshAt)
+                            ? 0 : nextOpenMeteoRefreshAt - now;
+      if (tmepConfigured && (tmepEnabled || !tmepCatalogPrimed)) {
+        const uint32_t tmepWait = due(now, nextTmepRefreshAt)
+                                      ? 0 : nextTmepRefreshAt - now;
+        waitMs = min(waitMs, tmepWait);
+      }
+      if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(waitMs)) > 0) {
+        nextOpenMeteoRefreshAt = nextTmepRefreshAt = 0;
+        tmepCatalogPrimed = false;
+        // Configuration/source changes must not retain another sensor's value
+        // when the newly selected source is unavailable.
+        lastAvailableValues = ClockValues{};
+      }
       continue;
     }
+
+    nextOpenMeteoRefreshAt = nextTmepRefreshAt = 0;
+    tmepCatalogPrimed = false;
 
     if (config.homeAssistantUrl[0] == '\0' ||
         config.homeAssistantToken[0] == '\0') {

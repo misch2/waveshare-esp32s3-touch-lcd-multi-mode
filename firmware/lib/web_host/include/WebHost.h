@@ -4,6 +4,7 @@
 // second web configuration schema. The firmware build exposes the pinned
 // submodule include directory through platformio.ini.
 #include "ConfigurationWeb.h"
+#include "BoundedWebServer.h"
 #include "CombinedWebRoutes.h"
 #include "MeteoWebRoutes.h"
 
@@ -19,6 +20,10 @@ using DisplayPowerStatusCallback = ::DisplayPowerStatusCallback;
 using DayNightStatusCallback = ::DayNightStatusCallback;
 using StorageBeginCallback = ::ConfigurationStorageBeginCallback;
 using StorageEndCallback = ::ConfigurationStorageEndCallback;
+using RadarRangeStateCallback = ::RadarRangeStateCallback;
+using RadarRangePreviewCallback = ::RadarRangePreviewCallback;
+using ClockAppearanceStateCallback = ::ClockAppearanceStateCallback;
+using ClockAppearanceChangeCallback = ::ClockAppearanceChangeCallback;
 using Mode = ::ConfigurationWebMode;
 
 constexpr Mode MODE_TIMED = ::CONFIGURATION_WEB_TIMED;
@@ -38,7 +43,10 @@ bool begin(ClockConfigLoadCallback loadCallback,
            StorageBeginCallback storageBeginCallback,
            StorageEndCallback storageEndCallback,
            const app_core::MeteoWebRoutes& meteoRoutes,
-           const app_core::CombinedWebRoutes& combinedRoutes);
+           const app_core::CombinedWebRoutes& combinedRoutes,
+           ClockAppearanceStateCallback appearanceStateCallback = nullptr,
+           ClockAppearanceChangeCallback appearancePreviewCallback = nullptr,
+           ClockAppearanceChangeCallback appearanceSaveCallback = nullptr);
 void loop();
 void ensureActive();
 bool active();

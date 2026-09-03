@@ -1,5 +1,6 @@
 #include "AppConfig.h"
 #include "BuildProvenance.h"
+#include "ClockConfig.h"
 #include "ClockWeatherAnimationPolicy.h"
 #include "CombinedWebRoutes.h"
 #include "ConfigurationWebRoutes.h"
@@ -24,6 +25,9 @@
 #include <iterator>
 #include <limits>
 #include <string>
+#include <vector>
+
+#include <Preferences.h>
 
 namespace {
 
@@ -85,7 +89,7 @@ void testBuildProvenance() {
       app_core::kComponentProvenance[1];
   CHECK_STREQ(clock.id, "waveshare-hodiny");
   CHECK_STREQ(clock.upstreamRef, "main");
-  CHECK_STREQ(clock.upstreamTag, "v1.5.5");
+  CHECK_STREQ(clock.upstreamTag, "v1.7.2");
   CHECK(std::strlen(clock.upstreamUrl) > 0);
   CHECK(std::strlen(clock.upstreamBase) == 40);
   CHECK(std::strlen(clock.forkUrl) > 0);
@@ -1513,7 +1517,65 @@ void testCombinedClockFirmwareVersionHandoff() {
   CHECK(compactHost.find(
             "ClockScreenclockScreen(clockConfig,previewClockBrightness,"
             "openClockSettings,allowClockDashboardShortClick,"
-            "kCombinedFirmwareVersion);") != std::string::npos);
+            "kCombinedFirmwareVersion,&activeClockAppearance);") !=
+        std::string::npos);
+}
+
+uint32_t nativeBytesChecksum(const uint8_t* bytes, std::size_t size) {
+  uint32_t hash = 2166136261u;
+  for (std::size_t index = 0; index < size; ++index) {
+    hash ^= bytes[index];
+    hash *= 16777619u;
+  }
+  return hash;
+}
+
+void testClockConfigSchema20Migration() {
+  constexpr std::size_t kSchema20PayloadSize = offsetof(ClockConfig, radarRadiusKm);
+  constexpr std::size_t kSchema20RecordSize = kSchema20PayloadSize + 12;
+  constexpr uint32_t kConfigMagic = 0x57484346;
+
+  ClockConfig oldConfig;
+  clockConfigApplyDefaults(oldConfig);
+  oldConfig.schemaVersion = 20;
+  clockConfigCopy(oldConfig.leftSide.name, sizeof(oldConfig.leftSide.name),
+                  "GARAGE");
+  clockConfigCopy(oldConfig.rightSide.name, sizeof(oldConfig.rightSide.name),
+                  "BEDROOM");
+  oldConfig.leftSide.color = 0x102030;
+  oldConfig.rightSide.color = 0x405060;
+
+  std::vector<uint8_t> record(kSchema20RecordSize, 0);
+  std::memcpy(record.data(), &kConfigMagic, sizeof(kConfigMagic));
+  std::memcpy(record.data() + sizeof(kConfigMagic), &oldConfig.schemaVersion,
+              sizeof(oldConfig.schemaVersion));
+  std::memcpy(record.data() + 8, &oldConfig, kSchema20PayloadSize);
+  const uint32_t checksum =
+      nativeBytesChecksum(record.data() + 8, kSchema20PayloadSize);
+  std::memcpy(record.data() + 8 + kSchema20PayloadSize, &checksum,
+              sizeof(checksum));
+  native_preferences::setBytes(record.data(), record.size());
+
+  ClockConfig migrated;
+  CHECK(clockConfigLoad(migrated));
+  CHECK_EQ(migrated.schemaVersion, CLOCK_CONFIG_SCHEMA_VERSION);
+  CHECK_STREQ(migrated.leftSide.name, "GARAGE");
+  CHECK_STREQ(migrated.rightSide.name, "BEDROOM");
+  CHECK_EQ(migrated.leftSide.color, 0x102030u);
+  CHECK_EQ(migrated.rightSide.color, 0x405060u);
+  CHECK(migrated.leftValue.custom);
+  CHECK(migrated.rightValue.custom);
+  CHECK_EQ(migrated.leftValueColorScale.points[0].color, 0x102030u);
+  CHECK_EQ(migrated.rightValueColorScale.points[0].color, 0x405060u);
+
+  // A malformed legacy checksum must not be accepted as a migration. The
+  // loader falls back to normal defaults and rewrites a current record.
+  record.back() ^= 0x01;
+  native_preferences::setBytes(record.data(), record.size());
+  ClockConfig rejected;
+  CHECK(clockConfigLoad(rejected));
+  CHECK_STREQ(rejected.leftSide.name, "VENKU");
+  CHECK_EQ(rejected.leftSide.color, 0x4CCBECu);
 }
 
 }  // namespace
@@ -1550,6 +1612,7 @@ int main() {
   testClockWeatherAnimationPolicy();
   testUpstreamWeatherAnimationAssetKeys();
   testCombinedClockFirmwareVersionHandoff();
+  testClockConfigSchema20Migration();
 
   if (failures != 0) {
     std::fprintf(stderr, "%d test assertion(s) failed\n", failures);

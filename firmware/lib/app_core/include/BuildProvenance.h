@@ -18,7 +18,7 @@ struct ComponentProvenance {
 
 inline constexpr ComponentProvenance kComponentProvenance[] = {
     {"meteo-plane-radar", "MeteoPlaneRadar", "https://github.com/petus/MeteoPlaneRadar", "main", "deb3fb452a22cb90ad61728bb395e9ea6560ee04", "v0.6.4", "https://github.com/misch2/MeteoPlaneRadar", "451aec4881444c38fe0b4465536a0f83ad9eb3d8"},
-    {"waveshare-hodiny", "waveshare-hodiny", "https://github.com/CooLajz/waveshare-hodiny", "main", "9537a76932fc9269b2a22a5fb90a62785897c680", "v1.5.5", "https://github.com/misch2/waveshare-hodiny-fork", "915fb211c3c700e030ca18a9eebed974557caf13"},
+    {"waveshare-hodiny", "waveshare-hodiny", "https://github.com/CooLajz/waveshare-hodiny", "main", "581087e8129e2d24db55f390c110664f1fc178b0", "v1.7.2", "https://github.com/misch2/waveshare-hodiny-fork", "b99f3752ccfd9717a12da93964f905b89fe6bdbe"},
 };
 inline constexpr std::size_t kComponentProvenanceCount =
     sizeof(kComponentProvenance) / sizeof(kComponentProvenance[0]);
