@@ -4,11 +4,10 @@
 
 Mít na 2.1" Waveshare displeji [hodiny od CooLajze](https://github.com/CooLajz/waveshare-hodiny), nebo [MeteoPlaneRadar](https://github.com/petus/MeteoPlaneRadar) od Chiptrona?
 
+Odpověď samozřejmě zní:
+
 <img width="338" height="208" alt="image" src="https://github.com/user-attachments/assets/5aac2ea1-cf0a-4df5-9316-896c49fcc6b7" />
 
-proto tento firmware kombinuje obojí.
-
-<img width="335" height="191" alt="image" src="https://github.com/user-attachments/assets/a337099d-68ca-49b2-9e3d-8a1089ce34d4" />
 
 ## Co firmware obsahuje
 
